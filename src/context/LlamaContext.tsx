@@ -27,7 +27,7 @@ interface LlamaContextValue {
   modelName: string;
   isReady: boolean;
   isWeb: boolean;
-  selectModel: (id: ModelId) => void;
+  selectModel: (id: ModelId) => Promise<void>;
   downloadAndInit: () => Promise<void>;
   retry: () => void;
 }

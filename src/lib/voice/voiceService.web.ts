@@ -1,5 +1,5 @@
 import * as Speech from 'expo-speech';
-import { getSpeechOptions } from './speechSettings';
+import { speakText, getEnglishVoices } from './speechSettings';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let recognition: any = null;
@@ -13,14 +13,14 @@ export function isVoiceSupported(): boolean {
 
 export function startListening(
   onResult: (text: string, isFinal: boolean) => void,
-  onError?: (message: string) => void
+  onEnd?: () => void
 ): void {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const w = window as any;
   const SpeechRecognitionCtor = w.SpeechRecognition || w.webkitSpeechRecognition;
 
   if (!SpeechRecognitionCtor) {
-    onError?.('Voice is not supported in this browser. Try Chrome or Edge.');
+    onEnd?.();
     return;
   }
 
@@ -43,7 +43,11 @@ export function startListening(
   };
 
   recognition.onerror = () => {
-    onError?.('Could not hear you clearly. Try again.');
+    onEnd?.();
+  };
+
+  recognition.onend = () => {
+    onEnd?.();
   };
 
   recognition.start();
@@ -56,20 +60,10 @@ export function stopListening(): void {
   }
 }
 
-export async function speak(text: string): Promise<void> {
-  const clean = text.replace(/\n+/g, '. ').slice(0, 500);
-  return new Promise((resolve) => {
-    Speech.speak(clean, {
-      ...getSpeechOptions(),
-      onDone: () => resolve(),
-      onStopped: () => resolve(),
-      onError: () => resolve(),
-    });
-  });
-}
+export const speak = speakText;
 
 export function stopSpeaking(): void {
   Speech.stop();
 }
 
-export { getEnglishVoices } from './speechSettings';
+export { getEnglishVoices };

@@ -18,6 +18,7 @@ import {
 export function useVoice() {
   const [isListening, setIsListening] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [isPreviewing, setIsPreviewing] = useState(false);
   const [transcript, setTranscript] = useState('');
   const [voiceEnabled, setVoiceEnabled] = useState(true);
   const [availableVoices, setAvailableVoices] = useState<Voice[]>([]);
@@ -64,10 +65,10 @@ export function useVoice() {
   );
 
   const previewVoice = useCallback(async () => {
-    setIsSpeaking(true);
+    setIsPreviewing(true);
     VoiceService.stopSpeaking();
     await VoiceService.speak(VOICE_PREVIEW_TEXT);
-    setIsSpeaking(false);
+    setIsPreviewing(false);
   }, []);
 
   const startListening = useCallback((onFinal?: (text: string) => void) => {
@@ -126,6 +127,7 @@ export function useVoice() {
     supported,
     isListening,
     isSpeaking,
+    isPreviewing,
     transcript,
     voiceEnabled,
     setVoiceEnabled,
@@ -138,6 +140,5 @@ export function useVoice() {
     stopListening,
     toggleListening,
     speak,
-    stopSpeaking: VoiceService.stopSpeaking,
   };
 }

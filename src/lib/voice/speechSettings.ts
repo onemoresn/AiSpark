@@ -30,3 +30,15 @@ export async function getEnglishVoices() {
     .filter((v) => v.language.toLowerCase().startsWith('en'))
     .sort((a, b) => a.name.localeCompare(b.name));
 }
+
+export async function speakText(text: string): Promise<void> {
+  const clean = text.replace(/\n+/g, '. ').slice(0, 500);
+  return new Promise((resolve) => {
+    Speech.speak(clean, {
+      ...getSpeechOptions(),
+      onDone: () => resolve(),
+      onStopped: () => resolve(),
+      onError: () => resolve(),
+    });
+  });
+}

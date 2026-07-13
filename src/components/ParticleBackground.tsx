@@ -3,7 +3,7 @@ import { View, StyleSheet, Animated, Dimensions } from 'react-native';
 import { colors } from '../constants/theme';
 
 const { width, height } = Dimensions.get('window');
-const PARTICLE_COUNT = 28;
+const PARTICLE_COUNT = 14;
 
 interface Particle {
   x: Animated.Value;

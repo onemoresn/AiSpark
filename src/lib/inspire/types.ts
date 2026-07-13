@@ -1,4 +1,4 @@
-export type MessageRole = 'user' | 'assistant' | 'system';
+export type MessageRole = 'user' | 'assistant';
 
 export interface ChatMessage {
   id: string;
@@ -32,9 +32,4 @@ export interface SearchResult {
   title: string;
   snippet: string;
   url?: string;
-}
-
-export interface ToolCall {
-  name: 'get_weather' | 'get_news' | 'web_search';
-  arguments: Record<string, unknown>;
 }

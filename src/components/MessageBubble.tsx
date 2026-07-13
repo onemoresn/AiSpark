@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { memo } from 'react';
 import { View, Text, StyleSheet, Image } from 'react-native';
 import type { ChatMessage } from '../lib/inspire/types';
 import { colors, radii, spacing } from '../constants/theme';
@@ -7,7 +7,7 @@ interface Props {
   message: ChatMessage;
 }
 
-export function MessageBubble({ message }: Props) {
+function MessageBubbleComponent({ message }: Props) {
   const isUser = message.role === 'user';
 
   return (
@@ -27,6 +27,8 @@ export function MessageBubble({ message }: Props) {
     </View>
   );
 }
+
+export const MessageBubble = memo(MessageBubbleComponent);
 
 const styles = StyleSheet.create({
   row: {

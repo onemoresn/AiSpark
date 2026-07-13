@@ -1,33 +1,23 @@
 import * as Speech from 'expo-speech';
-import { getSpeechOptions } from './speechSettings';
+import { speakText, getEnglishVoices } from './speechSettings';
 
 export function isVoiceSupported(): boolean {
-  return true;
+  return false;
 }
 
 export function startListening(
   _onResult: (text: string, isFinal: boolean) => void,
-  onError?: (message: string) => void
+  onEnd?: () => void
 ): void {
-  onError?.('Voice input works on web. On mobile, type or use the web version in Chrome.');
+  onEnd?.();
 }
 
 export function stopListening(): void {}
 
-export async function speak(text: string): Promise<void> {
-  const clean = text.replace(/\n+/g, '. ').slice(0, 500);
-  return new Promise((resolve) => {
-    Speech.speak(clean, {
-      ...getSpeechOptions(),
-      onDone: () => resolve(),
-      onStopped: () => resolve(),
-      onError: () => resolve(),
-    });
-  });
-}
+export const speak = speakText;
 
 export function stopSpeaking(): void {
   Speech.stop();
 }
 
-export { getEnglishVoices } from './speechSettings';
+export { getEnglishVoices };

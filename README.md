@@ -1,102 +1,56 @@
-# Inspire — On-Device Motivational Assistant
+# AiSpark — Motivational AI Assistant
 
-A warm, uplifting mobile app powered by **Gemma running entirely on your iPhone** — free, private, and unlimited. No API keys. No token limits. No cloud.
+**Spark** is a warm, uplifting mobile and web assistant with on-device AI, voice conversation, and motivational tools.
 
 ## Features
 
-- **100% on-device AI** — Gemma 2 2B or Gemma 3 4B via [llama.rn](https://github.com/mybigday/llama.rn)
-- **Unlimited conversations** — no API costs, no rate limits
-- **Fully private** — your chats never leave your phone
-- **Weather awareness** — location-based weather with motivational interpretations
-- **News summaries** — calm, clear headlines
-- **Web search** — factual lookups with encouraging takeaways
-- **Offline chat** — works without internet after the one-time model download
+- **Spark personality** — positive, friendly, motivational responses
+- **Voice conversation** — speak to Spark and hear replies (web: Chrome/Edge)
+- **Voice customization** — styles and English voice dropdown in Settings
+- **On-device AI** — Gemma 2 2B / Gemma 3 4B via llama.rn (iPhone/Android)
+- **Weather, news, search** — live tools with motivational framing
+- **Dark neon-purple UI** — robot mascot with animated particles
 
-## Model Options
-
-| Model | Size | Best For |
-|-------|------|----------|
-| **Gemma 2 2B** (default) | 1.7 GB | Most iPhones — fast and smooth |
-| **Gemma 3 4B** | 2.5 GB | iPhone 12+ with 6 GB RAM — smarter responses |
-
-## Requirements
-
-- **iPhone** with 3 GB+ RAM (Gemma 2 2B) or 6 GB+ RAM (Gemma 3 4B)
-- **macOS** for building the iOS app (or EAS Build in the cloud)
-- **Development build** — this app uses native on-device AI and does **not** run in Expo Go
-
-## Get Started
-
-### Web (fastest — works on Windows)
+## Quick Start (Web)
 
 ```bash
 npm install
 npm run web
 ```
 
-Opens in your browser at `http://localhost:8081`. No prebuild, no Mac, no API keys needed.
+Open `http://localhost:8081`
 
-> **Note:** Web uses the built-in assistant with weather, news, and search tools. On-device Gemma runs on iPhone/Android only.
-
-### iPhone (on-device Gemma)
+## iPhone (On-Device AI)
 
 ```bash
 npx expo prebuild
 npx expo run:ios
 ```
 
-Or use [EAS Build](https://docs.expo.dev/build/introduction/) if you don't have a Mac:
+Requires a development build (not Expo Go). First launch downloads the Gemma model once (~1.7–2.5 GB).
 
-```bash
-npx eas build --platform ios --profile development
-```
+## Voice
 
-### 3. First launch
-
-On first open, Inspire downloads your chosen Gemma model (one-time, ~1.7–2.5 GB). After that, everything runs locally on your phone.
-
-### 4. Start developing
-
-```bash
-npm start
-```
-
-## How It Works
-
-```
-User message
-    ↓
-Intent detection (weather / news / search)
-    ↓
-Tool execution (if needed) — still uses network for live data
-    ↓
-Gemma on-device (llama.rn + Metal GPU)
-    ↓
-Warm, motivational response
-```
-
-| Trigger | Tool | Source |
-|---------|------|--------|
-| Weather | `get_weather` | Open-Meteo (free) |
-| News | `get_news` | BBC World RSS |
-| Facts | `web_search` | DuckDuckGo |
-
-Chat inference is fully on-device. Weather, news, and search still need internet when you ask for live data.
+- Tap the **mic** to speak (web browsers with speech recognition)
+- **Settings → Voice style** — Warm, Calm, Bright, Energetic & Enthusiastic, Deep
+- **Settings → Voice dropdown** — pick from English system voices
+- Tap **Preview** to test before chatting
 
 ## Project Structure
 
 ```
 src/
-  components/       # Chat UI, model setup screen
-  context/          # LlamaProvider — model lifecycle
+  components/     # UI (chat, landing, settings, particles)
+  hooks/          # useVoice
   lib/
-    llm/            # Gemma download + inference (llama.rn)
-    chat/           # Inspire conversation engine
-    tools/          # Weather, news, search
+    chat/         # Spark conversation engine
+    llm/          # On-device Gemma (llama.rn)
+    voice/        # Speech settings and STT/TTS
+    tools/        # Weather, news, search
 ```
 
 ## Privacy
 
-- Chats stored locally on your device only
-- AI runs on your iPhone's GPU (Metal) — zero cloud inference
-- Location used only when you ask about weather
+- Chats stored locally (last 50 messages)
+- On-device AI runs fully on your phone — no cloud inference
+- Location used only for weather requests

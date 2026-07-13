@@ -19,6 +19,7 @@ import {
   WELCOME_MESSAGE,
 } from '../lib/chat/inspireChat';
 import { loadChatHistory, saveChatHistory, clearChatHistory } from '../lib/storage';
+import { MAX_CHAT_MESSAGES } from '../constants/chat';
 import { useLlama } from '../context/LlamaContext';
 import { useVoice } from '../hooks/useVoice';
 import { ParticleBackground } from './ParticleBackground';
@@ -28,12 +29,17 @@ import { QuickActions } from './QuickActions';
 import { SettingsModal } from './SettingsModal';
 import { colors, spacing } from '../constants/theme';
 
+function trimMessages(messages: ChatMessage[]): ChatMessage[] {
+  return messages.slice(-MAX_CHAT_MESSAGES);
+}
+
 export function ChatScreen() {
   const { isReady, modelName, isWeb } = useLlama();
   const {
     supported: voiceSupported,
     isListening,
     isSpeaking,
+    isPreviewing,
     transcript,
     voiceEnabled,
     setVoiceEnabled,
@@ -52,11 +58,21 @@ export function ChatScreen() {
   const [loading, setLoading] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const listRef = useRef<FlatList>(null);
+  const loadingRef = useRef(false);
+  const shouldScrollRef = useRef(true);
 
   useEffect(() => {
+    let active = true;
     loadChatHistory().then((history) => {
-      if (history.length > 0) setMessages(history);
+      if (!active || history.length === 0) return;
+      setMessages((current) => {
+        const isFresh = current.length === 1 && current[0]?.id === 'welcome';
+        return isFresh ? history : current;
+      });
     });
+    return () => {
+      active = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -66,35 +82,52 @@ export function ChatScreen() {
   }, [transcript, isListening]);
 
   const scrollToEnd = useCallback(() => {
+    if (!shouldScrollRef.current) return;
     setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
   }, []);
 
   const sendMessage = useCallback(
     async (text: string) => {
       const trimmed = text.trim();
-      if (!trimmed || loading) return;
+      if (!trimmed || loadingRef.current) return;
 
       stopListening();
-      const userMsg = createUserMessage(trimmed);
-      const updated = [...messages, userMsg];
-      setMessages(updated);
-      setInput('');
+      shouldScrollRef.current = true;
+      loadingRef.current = true;
       setLoading(true);
-      scrollToEnd();
+      setInput('');
 
-      const assistantMsg = await generateInspireResponse(trimmed, messages);
-      const final = [...updated, assistantMsg];
-      setMessages(final);
-      await saveChatHistory(final);
-      setLoading(false);
-      scrollToEnd();
+      let historyForResponse: ChatMessage[] = [];
+      let userMsg!: ChatMessage;
 
-      if (voiceEnabled) {
-        await speak(assistantMsg.content);
+      setMessages((prev) => {
+        historyForResponse = prev;
+        userMsg = createUserMessage(trimmed);
+        scrollToEnd();
+        return trimMessages([...prev, userMsg]);
+      });
+
+      try {
+        const assistantMsg = await generateInspireResponse(trimmed, historyForResponse);
+        const final = trimMessages([...historyForResponse, userMsg, assistantMsg]);
+
+        setMessages(final);
+        await saveChatHistory(final);
+        scrollToEnd();
+
+        if (voiceEnabled) {
+          await speak(assistantMsg.content);
+        }
+      } finally {
+        loadingRef.current = false;
+        setLoading(false);
       }
     },
-    [messages, loading, scrollToEnd, stopListening, speak, voiceEnabled]
+    [scrollToEnd, stopListening, speak, voiceEnabled]
   );
+
+  const sendMessageRef = useRef(sendMessage);
+  sendMessageRef.current = sendMessage;
 
   const handleClearChat = async () => {
     await clearChatHistory();
@@ -102,8 +135,13 @@ export function ChatScreen() {
   };
 
   const handleVoiceToggle = () => {
-    toggleListening((text) => sendMessage(text));
+    toggleListening((text) => sendMessageRef.current(text));
   };
+
+  const renderItem = useCallback(
+    ({ item }: { item: ChatMessage }) => <MessageBubble message={item} />,
+    []
+  );
 
   return (
     <View style={styles.root}>
@@ -150,9 +188,11 @@ export function ChatScreen() {
           ref={listRef}
           data={messages}
           keyExtractor={(item) => item.id}
-          renderItem={({ item }) => <MessageBubble message={item} />}
+          renderItem={renderItem}
           contentContainerStyle={styles.messageList}
-          onContentSizeChange={scrollToEnd}
+          initialNumToRender={15}
+          maxToRenderPerBatch={10}
+          windowSize={7}
           showsVerticalScrollIndicator={false}
         />
 
@@ -187,7 +227,7 @@ export function ChatScreen() {
         onSelectVoice={selectVoice}
         onSelectStyle={selectVoiceStyle}
         onPreviewVoice={previewVoice}
-        isPreviewing={isSpeaking}
+        isPreviewing={isPreviewing}
       />
     </View>
   );

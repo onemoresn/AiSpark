@@ -5,10 +5,9 @@ import { ChatScreen } from './src/components/ChatScreen';
 import { ModelSetupScreen } from './src/components/ModelSetupScreen';
 import { LandingScreen } from './src/components/LandingScreen';
 import { hasSeenLanding, setSeenLanding } from './src/lib/storage';
-import { Platform } from 'react-native';
 
 function AppContent() {
-  const { isReady, isWeb } = useLlama();
+  const { isReady, isWeb, status } = useLlama();
   const [showLanding, setShowLanding] = useState<boolean | null>(null);
 
   useEffect(() => {
@@ -26,7 +25,7 @@ function AppContent() {
     return <LandingScreen onGetStarted={handleGetStarted} />;
   }
 
-  if (!isReady && !isWeb && Platform.OS !== 'web') {
+  if (!isWeb && status !== 'ready') {
     return <ModelSetupScreen />;
   }
 

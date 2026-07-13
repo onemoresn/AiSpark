@@ -1,14 +1,20 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { ChatMessage } from './inspire/types';
-import type { ModelId } from './llm/modelConfig';
-import { DEFAULT_MODEL } from './llm/modelConfig';
+import { DEFAULT_MODEL, MODELS, type ModelId } from './llm/modelConfig';
 import type { VoicePreference } from './voice/voiceConfig';
 import { DEFAULT_VOICE_PREFERENCE } from './voice/voiceConfig';
+import { MAX_CHAT_MESSAGES } from '../constants/chat';
 
 const CHAT_KEY = '@spark_chat_history';
 const MODEL_KEY = '@spark_selected_model';
 const LANDING_KEY = '@spark_seen_landing';
 const VOICE_PREF_KEY = '@spark_voice_preference';
+
+const VALID_MODEL_IDS = new Set(Object.keys(MODELS));
+
+function isValidModelId(value: string): value is ModelId {
+  return VALID_MODEL_IDS.has(value);
+}
 
 export async function loadChatHistory(): Promise<ChatMessage[]> {
   try {
@@ -20,7 +26,7 @@ export async function loadChatHistory(): Promise<ChatMessage[]> {
 }
 
 export async function saveChatHistory(messages: ChatMessage[]): Promise<void> {
-  const trimmed = messages.slice(-50);
+  const trimmed = messages.slice(-MAX_CHAT_MESSAGES);
   await AsyncStorage.setItem(CHAT_KEY, JSON.stringify(trimmed));
 }
 
@@ -30,7 +36,8 @@ export async function clearChatHistory(): Promise<void> {
 
 export async function getSelectedModel(): Promise<ModelId | null> {
   const value = await AsyncStorage.getItem(MODEL_KEY);
-  return (value as ModelId) ?? null;
+  if (value && isValidModelId(value)) return value;
+  return null;
 }
 
 export async function setSelectedModel(modelId: ModelId): Promise<void> {

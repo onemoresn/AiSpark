@@ -4,7 +4,7 @@ import { getUserLocation } from '../location';
 import { executeTool } from '../tools';
 import { detectWeatherIntent } from '../tools/weather';
 import { detectNewsIntent } from '../tools/news';
-import { detectSearchIntent, webSearch, formatSearchResponse } from '../tools/webSearch';
+import { detectSearchIntent } from '../tools/webSearch';
 import { generateCompletion, isModelReady, isOnDeviceLLMSupported } from '../llm/llamaService';
 
 function randomClosing(): string {
@@ -13,6 +13,13 @@ function randomClosing(): string {
 
 function createId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
+function extractSearchQuery(message: string): string {
+  return message
+    .replace(/\b(what is|who is|when did|how does|tell me about|explain|define|search for)\b/gi, '')
+    .replace(/[?]/g, '')
+    .trim();
 }
 
 async function gatherToolContext(
@@ -27,12 +34,8 @@ async function gatherToolContext(
       return await executeTool('get_news', {}, location);
     }
     if (detectSearchIntent(userMessage)) {
-      const query = userMessage
-        .replace(/\b(what is|who is|when did|how does|tell me about|explain|define|search for)\b/gi, '')
-        .replace(/[?]/g, '')
-        .trim();
-      const results = await webSearch(query || userMessage);
-      return formatSearchResponse(query || userMessage, results);
+      const query = extractSearchQuery(userMessage) || userMessage;
+      return await executeTool('web_search', { query }, location);
     }
   } catch {
     return null;
@@ -40,7 +43,7 @@ async function gatherToolContext(
   return null;
 }
 
-async function respondWithGemma(
+async function respondWithOnDeviceLLM(
   userMessage: string,
   history: ChatMessage[],
   location: LocationCoords | null
@@ -48,7 +51,7 @@ async function respondWithGemma(
   const toolContext = await gatherToolContext(userMessage, location);
 
   const recentHistory = history
-    .filter((m) => m.role !== 'system' && m.id !== 'welcome')
+    .filter((m) => m.id !== 'welcome')
     .slice(-8)
     .map((m) => ({
       role: m.role as 'user' | 'assistant',
@@ -125,7 +128,7 @@ export async function generateInspireResponse(
   let content: string;
   try {
     if (isOnDeviceLLMSupported() && isModelReady()) {
-      content = await respondWithGemma(userMessage, history, location);
+      content = await respondWithOnDeviceLLM(userMessage, history, location);
     } else {
       content = await respondLocally(userMessage, location);
     }

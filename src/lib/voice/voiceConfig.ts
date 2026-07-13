@@ -37,8 +37,4 @@ export function formatVoiceLabel(voice: Voice): string {
   return `${voice.name} (${lang})`;
 }
 
-export function isSameVoicePreference(a: VoicePreference, b: VoicePreference): boolean {
-  return a.voiceId === b.voiceId && a.pitch === b.pitch && a.rate === b.rate;
-}
-
 export const VOICE_PREVIEW_TEXT = "Hey — I'm Spark. I'm here to lift your spirit today.";

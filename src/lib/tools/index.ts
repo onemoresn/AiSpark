@@ -4,47 +4,6 @@ import { getWeather, formatWeatherResponse } from './weather';
 import { getNews, formatNewsResponse } from './news';
 import { webSearch, formatSearchResponse } from './webSearch';
 
-export const TOOL_DEFINITIONS = [
-  {
-    type: 'function' as const,
-    function: {
-      name: 'get_weather',
-      description: "Get current weather for the user's location to provide motivational weather insights.",
-      parameters: {
-        type: 'object',
-        properties: {
-          latitude: { type: 'number', description: 'User latitude' },
-          longitude: { type: 'number', description: 'User longitude' },
-          location_name: { type: 'string', description: 'Human-readable location name' },
-        },
-        required: ['latitude', 'longitude'],
-      },
-    },
-  },
-  {
-    type: 'function' as const,
-    function: {
-      name: 'get_news',
-      description: 'Get current news headlines to summarize in a calm, motivational tone.',
-      parameters: { type: 'object', properties: {} },
-    },
-  },
-  {
-    type: 'function' as const,
-    function: {
-      name: 'web_search',
-      description: 'Search the web for factual information the assistant cannot answer directly.',
-      parameters: {
-        type: 'object',
-        properties: {
-          query: { type: 'string', description: 'The search query' },
-        },
-        required: ['query'],
-      },
-    },
-  },
-];
-
 export async function executeTool(
   name: string,
   args: Record<string, unknown>,
@@ -57,7 +16,7 @@ export async function executeTool(
       const locName = (args.location_name as string) ?? location?.city;
 
       if (lat == null || lon == null) {
-        const userLoc = await getUserLocation();
+        const userLoc = location ?? (await getUserLocation());
         if (!userLoc) {
           return "I couldn't reach your location right now, but the day still holds plenty of potential. Step outside when you can and let the air reset your focus.";
         }

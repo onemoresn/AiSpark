@@ -7,6 +7,7 @@ type LlamaContext = Awaited<ReturnType<typeof import('llama.rn')['initLlama']>>;
 
 let llamaContext: LlamaContext | null = null;
 let initPromise: Promise<LlamaContext> | null = null;
+let loadedModelId: ModelId | null = null;
 
 export function isOnDeviceLLMSupported(): boolean {
   return Platform.OS === 'ios' || Platform.OS === 'android';
@@ -63,23 +64,15 @@ export async function downloadModel(
   return dest.uri;
 }
 
-export async function deleteModel(modelId: ModelId): Promise<void> {
-  const file = getModelFile(modelId);
-  if (file.exists) file.delete();
-  if (llamaContext) {
-    await llamaContext.release();
-    llamaContext = null;
-    initPromise = null;
-  }
-}
-
 export async function initModel(modelId?: ModelId): Promise<LlamaContext> {
-  if (llamaContext) return llamaContext;
+  const id = modelId ?? (await getSelectedModel()) ?? DEFAULT_MODEL;
+
+  if (llamaContext && loadedModelId === id) return llamaContext;
+  if (llamaContext) await releaseModel();
   if (initPromise) return initPromise;
 
   initPromise = (async () => {
     const { initLlama } = await import('llama.rn');
-    const id = modelId ?? (await getSelectedModel()) ?? DEFAULT_MODEL;
     const path = await getModelPath(id);
 
     if (!path) {
@@ -93,6 +86,7 @@ export async function initModel(modelId?: ModelId): Promise<LlamaContext> {
       n_gpu_layers: Platform.OS === 'ios' ? 99 : 0,
     });
 
+    loadedModelId = id;
     return llamaContext;
   })();
 
@@ -100,6 +94,7 @@ export async function initModel(modelId?: ModelId): Promise<LlamaContext> {
     return await initPromise;
   } catch (err) {
     initPromise = null;
+    loadedModelId = null;
     throw err;
   }
 }
@@ -114,6 +109,7 @@ export async function releaseModel(): Promise<void> {
     llamaContext = null;
   }
   initPromise = null;
+  loadedModelId = null;
 }
 
 interface CompletionMessage {
