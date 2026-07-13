@@ -20,6 +20,32 @@ npm run web
 
 Open `http://localhost:8081`
 
+## Live Web App (GitHub Pages)
+
+**URL:** [https://onemoresn.github.io/AiSpark/](https://onemoresn.github.io/AiSpark/)
+
+Pushes to `master` automatically build and deploy the web app to the `gh-pages` branch.
+
+### One-time GitHub setup
+
+1. Open **Settings → Pages** on [github.com/onemoresn/AiSpark](https://github.com/onemoresn/AiSpark)
+2. Under **Build and deployment**, set **Source** to **Deploy from a branch**
+3. Choose branch **`gh-pages`**, folder **`/ (root)`**, then **Save**
+4. Wait for the first GitHub Actions deploy to finish (Actions tab)
+
+### Add to iPhone Home Screen
+
+1. Open the URL in **Safari**
+2. Tap **Share** → **Add to Home Screen**
+3. Spark launches full-screen like a native app (PWA)
+
+### Manual deploy
+
+```bash
+npm run build:web
+npm run deploy
+```
+
 ## iPhone (On-Device AI)
 
 ```bash

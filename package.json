@@ -31,7 +31,9 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "prebuild": "expo prebuild",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "build:web": "expo export -p web && node scripts/prepare-gh-pages.mjs",
+    "deploy": "npm run build:web && npx gh-pages -d dist -t true"
   },
   "private": true
 }
