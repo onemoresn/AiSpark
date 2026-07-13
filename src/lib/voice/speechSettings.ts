@@ -1,0 +1,32 @@
+import * as Speech from 'expo-speech';
+import type { SpeechOptions } from 'expo-speech';
+import {
+  DEFAULT_VOICE_PREFERENCE,
+  type VoicePreference,
+} from './voiceConfig';
+
+let preference: VoicePreference = { ...DEFAULT_VOICE_PREFERENCE };
+
+export function getVoicePreference(): VoicePreference {
+  return { ...preference };
+}
+
+export function setVoicePreference(next: VoicePreference): void {
+  preference = { ...next };
+}
+
+export function getSpeechOptions(): SpeechOptions {
+  return {
+    language: 'en-US',
+    pitch: preference.pitch,
+    rate: preference.rate,
+    ...(preference.voiceId ? { voice: preference.voiceId } : {}),
+  };
+}
+
+export async function getEnglishVoices() {
+  const voices = await Speech.getAvailableVoicesAsync();
+  return voices
+    .filter((v) => v.language.toLowerCase().startsWith('en'))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
