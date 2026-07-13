@@ -1,13 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { LlamaProvider, useLlama } from './src/context/LlamaContext';
+import { GeminiProvider } from './src/context/GeminiContext';
 import { ChatScreen } from './src/components/ChatScreen';
-import { ModelSetupScreen } from './src/components/ModelSetupScreen';
 import { LandingScreen } from './src/components/LandingScreen';
 import { hasSeenLanding, setSeenLanding } from './src/lib/storage';
 
 function AppContent() {
-  const { isReady, isWeb, status } = useLlama();
   const [showLanding, setShowLanding] = useState<boolean | null>(null);
 
   useEffect(() => {
@@ -25,19 +23,15 @@ function AppContent() {
     return <LandingScreen onGetStarted={handleGetStarted} />;
   }
 
-  if (!isWeb && status !== 'ready') {
-    return <ModelSetupScreen />;
-  }
-
   return <ChatScreen />;
 }
 
 export default function App() {
   return (
     <SafeAreaProvider>
-      <LlamaProvider>
+      <GeminiProvider>
         <AppContent />
-      </LlamaProvider>
+      </GeminiProvider>
     </SafeAreaProvider>
   );
 }

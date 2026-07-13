@@ -1,13 +1,13 @@
 # AiSpark — Motivational AI Assistant
 
-**Spark** is a warm, uplifting mobile and web assistant with on-device AI, voice conversation, and motivational tools.
+**Spark** is a warm, uplifting mobile and web assistant with Gemini AI, voice conversation, and motivational tools.
 
 ## Features
 
 - **Spark personality** — positive, friendly, motivational responses
 - **Voice conversation** — speak to Spark and hear replies (web: Chrome/Edge)
 - **Voice customization** — styles and English voice dropdown in Settings
-- **On-device AI** — Gemma 2 2B / Gemma 3 4B via llama.rn (iPhone/Android)
+- **Gemini AI** — Gemini 2.5 Flash, Gemini 3 Flash, or Gemini 3.5 Flash (your API key)
 - **Weather, news, search** — live tools with motivational framing
 - **Dark neon-purple UI** — robot mascot with animated particles
 
@@ -31,7 +31,6 @@ Pushes to `master` automatically build and deploy the web app to the `gh-pages` 
 1. Open **Settings → Pages** on [github.com/onemoresn/AiSpark](https://github.com/onemoresn/AiSpark)
 2. Under **Build and deployment**, set **Source** to **Deploy from a branch**
 3. Choose branch **`gh-pages`**, folder **`/ (root)`**, then **Save**
-4. Wait for the first GitHub Actions deploy to finish (Actions tab)
 
 ### Add to iPhone Home Screen
 
@@ -39,38 +38,32 @@ Pushes to `master` automatically build and deploy the web app to the `gh-pages` 
 2. Tap **Share** → **Add to Home Screen**
 3. Spark launches full-screen like a native app (PWA)
 
-### Manual deploy
+## Gemini API Setup
 
-```bash
-npm run build:web
-npm run deploy
-```
+1. Get a free API key from [Google AI Studio](https://aistudio.google.com/apikey)
+2. Open Spark → **Settings** (gear icon)
+3. Paste your API key, pick a Gemini model, adjust voice options
+4. Tap **Save configuration**
 
-## iPhone (On-Device AI)
-
-```bash
-npx expo prebuild
-npx expo run:ios
-```
-
-Requires a development build (not Expo Go). First launch downloads the Gemma model once (~1.7–2.5 GB).
+Without an API key, Spark still works with built-in motivational fallbacks and live weather/news tools.
 
 ## Voice
 
 - Tap the **mic** to speak (web browsers with speech recognition)
 - **Settings → Voice style** — Warm, Calm, Bright, Energetic & Enthusiastic, Deep
 - **Settings → Voice dropdown** — pick from English system voices
-- Tap **Preview** to test before chatting
+- Tap **Preview** to test before saving
 
 ## Project Structure
 
 ```
 src/
   components/     # UI (chat, landing, settings, particles)
+  context/        # Gemini settings context
   hooks/          # useVoice
   lib/
     chat/         # Spark conversation engine
-    llm/          # On-device Gemma (llama.rn)
+    llm/          # Gemini API service
     voice/        # Speech settings and STT/TTS
     tools/        # Weather, news, search
 ```
@@ -78,5 +71,6 @@ src/
 ## Privacy
 
 - Chats stored locally (last 50 messages)
-- On-device AI runs fully on your phone — no cloud inference
+- API key stored locally on your device
+- Gemini requests go to Google's API using your key
 - Location used only for weather requests

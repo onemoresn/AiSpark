@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Modal,
   View,
@@ -9,16 +9,22 @@ import {
   Switch,
   ActivityIndicator,
   Platform,
+  TextInput,
 } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
 import type { Voice } from 'expo-speech';
-import { useLlama } from '../context/LlamaContext';
-import { MODELS, type ModelId } from '../lib/llm/modelConfig';
+import {
+  GEMINI_MODEL_IDS,
+  GEMINI_MODELS,
+  type GeminiModelId,
+} from '../lib/llm/geminiConfig';
 import {
   formatVoiceLabel,
   VOICE_STYLES,
+  DEFAULT_VOICE_PREFERENCE,
   type VoicePreference,
 } from '../lib/voice/voiceConfig';
+import type { AppSettings } from '../lib/storage';
 import { colors, radii, spacing } from '../constants/theme';
 
 const DEFAULT_VOICE_VALUE = 'default';
@@ -27,13 +33,10 @@ interface Props {
   visible: boolean;
   onClose: () => void;
   onClearChat: () => void;
-  voiceEnabled?: boolean;
-  onVoiceToggle?: (enabled: boolean) => void;
+  savedSettings: AppSettings;
+  onSaveConfiguration: (settings: AppSettings) => Promise<void>;
   availableVoices?: Voice[];
-  voicePreference?: VoicePreference;
-  onSelectVoice?: (voiceId: string | null) => void;
-  onSelectStyle?: (pitch: number, rate: number) => void;
-  onPreviewVoice?: () => void;
+  onPreviewVoice?: (preference: VoicePreference) => void;
   isPreviewing?: boolean;
 }
 
@@ -41,24 +44,59 @@ export function SettingsModal({
   visible,
   onClose,
   onClearChat,
-  voiceEnabled = true,
-  onVoiceToggle,
+  savedSettings,
+  onSaveConfiguration,
   availableVoices = [],
-  voicePreference,
-  onSelectVoice,
-  onSelectStyle,
   onPreviewVoice,
   isPreviewing,
 }: Props) {
-  const { modelId, modelName, selectModel } = useLlama();
-  const selectedVoiceId = voicePreference?.voiceId ?? null;
-  const pickerValue = selectedVoiceId ?? DEFAULT_VOICE_VALUE;
-  const activeStyle = VOICE_STYLES.find(
-    (s) => s.pitch === voicePreference?.pitch && s.rate === voicePreference?.rate
-  );
+  const [draftApiKey, setDraftApiKey] = useState('');
+  const [draftModelId, setDraftModelId] = useState<GeminiModelId>('gemini-2.5-flash');
+  const [draftVoiceEnabled, setDraftVoiceEnabled] = useState(true);
+  const [draftVoiceId, setDraftVoiceId] = useState<string | null>(null);
+  const [draftPitch, setDraftPitch] = useState(DEFAULT_VOICE_PREFERENCE.pitch);
+  const [draftRate, setDraftRate] = useState(DEFAULT_VOICE_PREFERENCE.rate);
+  const [saving, setSaving] = useState(false);
+  const [saveMessage, setSaveMessage] = useState<string | null>(null);
 
-  const handleVoiceChange = (value: string) => {
-    onSelectVoice?.(value === DEFAULT_VOICE_VALUE ? null : value);
+  useEffect(() => {
+    if (!visible) return;
+    setDraftApiKey(savedSettings.apiKey);
+    setDraftModelId(savedSettings.modelId);
+    setDraftVoiceEnabled(savedSettings.voiceEnabled);
+    setDraftVoiceId(savedSettings.voicePreference.voiceId);
+    setDraftPitch(savedSettings.voicePreference.pitch);
+    setDraftRate(savedSettings.voicePreference.rate);
+    setSaveMessage(null);
+  }, [visible, savedSettings]);
+
+  const activeStyle = VOICE_STYLES.find(
+    (s) => s.pitch === draftPitch && s.rate === draftRate
+  );
+  const pickerValue = draftVoiceId ?? DEFAULT_VOICE_VALUE;
+
+  const draftVoicePreference: VoicePreference = {
+    voiceId: draftVoiceId,
+    pitch: draftPitch,
+    rate: draftRate,
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    setSaveMessage(null);
+    try {
+      await onSaveConfiguration({
+        apiKey: draftApiKey.trim(),
+        modelId: draftModelId,
+        voiceEnabled: draftVoiceEnabled,
+        voicePreference: draftVoicePreference,
+      });
+      setSaveMessage('Configuration saved.');
+    } catch {
+      setSaveMessage('Could not save. Please try again.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -68,16 +106,50 @@ export function SettingsModal({
           <ScrollView showsVerticalScrollIndicator={false}>
             <Text style={styles.title}>Settings</Text>
 
+            <Text style={styles.sectionTitle}>Gemini API key</Text>
+            <Text style={styles.hint}>
+              Get a free key at Google AI Studio. Stored locally on your device.
+            </Text>
+            <TextInput
+              style={styles.apiInput}
+              value={draftApiKey}
+              onChangeText={setDraftApiKey}
+              placeholder="Paste your Gemini API key"
+              placeholderTextColor={colors.textMuted}
+              autoCapitalize="none"
+              autoCorrect={false}
+              secureTextEntry
+            />
+
+            <Text style={[styles.sectionTitle, styles.modelSection]}>AI model</Text>
+            <Text style={styles.hint}>Powered by Google Gemini — fast cloud responses.</Text>
+
+            {GEMINI_MODEL_IDS.map((id) => {
+              const model = GEMINI_MODELS[id];
+              const selected = draftModelId === id;
+              return (
+                <TouchableOpacity
+                  key={id}
+                  style={[styles.modelRow, selected && styles.modelRowSelected]}
+                  onPress={() => setDraftModelId(id)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.modelRowName}>{model.name}</Text>
+                  <Text style={styles.modelRowMeta}>{model.description}</Text>
+                </TouchableOpacity>
+              );
+            })}
+
             <View style={styles.row}>
               <View style={styles.rowText}>
                 <Text style={styles.label}>Voice responses</Text>
                 <Text style={styles.hintInline}>Spark speaks replies aloud</Text>
               </View>
               <Switch
-                value={voiceEnabled}
-                onValueChange={onVoiceToggle}
+                value={draftVoiceEnabled}
+                onValueChange={setDraftVoiceEnabled}
                 trackColor={{ false: colors.border, true: colors.neonPurpleDim }}
-                thumbColor={voiceEnabled ? colors.neonPurple : colors.textMuted}
+                thumbColor={draftVoiceEnabled ? colors.neonPurple : colors.textMuted}
               />
             </View>
 
@@ -90,7 +162,10 @@ export function SettingsModal({
                   <TouchableOpacity
                     key={style.id}
                     style={[styles.styleChip, selected && styles.styleChipSelected]}
-                    onPress={() => onSelectStyle?.(style.pitch, style.rate)}
+                    onPress={() => {
+                      setDraftPitch(style.pitch);
+                      setDraftRate(style.rate);
+                    }}
                     activeOpacity={0.7}
                   >
                     <Text style={[styles.styleLabel, selected && styles.styleLabelSelected]}>
@@ -106,7 +181,7 @@ export function SettingsModal({
               <Text style={styles.sectionTitle}>Voice</Text>
               <TouchableOpacity
                 style={styles.previewButton}
-                onPress={onPreviewVoice}
+                onPress={() => onPreviewVoice?.(draftVoicePreference)}
                 disabled={isPreviewing}
                 activeOpacity={0.7}
               >
@@ -122,7 +197,9 @@ export function SettingsModal({
             <View style={styles.pickerContainer}>
               <Picker
                 selectedValue={pickerValue}
-                onValueChange={handleVoiceChange}
+                onValueChange={(value) =>
+                  setDraftVoiceId(value === DEFAULT_VOICE_VALUE ? null : value)
+                }
                 style={styles.picker}
                 dropdownIconColor={colors.neonPurple}
                 itemStyle={Platform.OS === 'ios' ? styles.pickerItemIOS : undefined}
@@ -149,28 +226,20 @@ export function SettingsModal({
               </Text>
             )}
 
-            <Text style={[styles.sectionTitle, styles.modelSection]}>On-device AI model</Text>
-            <Text style={styles.hint}>Runs on your phone — free, private, unlimited.</Text>
+            <TouchableOpacity
+              style={[styles.saveButton, saving && styles.saveButtonDisabled]}
+              onPress={handleSave}
+              disabled={saving}
+              activeOpacity={0.85}
+            >
+              {saving ? (
+                <ActivityIndicator size="small" color={colors.black} />
+              ) : (
+                <Text style={styles.saveButtonText}>Save configuration</Text>
+              )}
+            </TouchableOpacity>
 
-            {(Object.keys(MODELS) as ModelId[]).map((id) => {
-              const model = MODELS[id];
-              const selected = modelId === id;
-              return (
-                <TouchableOpacity
-                  key={id}
-                  style={[styles.modelRow, selected && styles.modelRowSelected]}
-                  onPress={() => selectModel(id)}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.modelRowName}>{model.name}</Text>
-                  <Text style={styles.modelRowMeta}>
-                    {model.sizeLabel} · {model.minRam}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-
-            <Text style={styles.currentModel}>Active model: {modelName}</Text>
+            {saveMessage && <Text style={styles.saveMessage}>{saveMessage}</Text>}
 
             <TouchableOpacity
               style={styles.secondaryButton}
@@ -248,6 +317,17 @@ const styles = StyleSheet.create({
   hintInline: {
     fontSize: 13,
     color: colors.textMuted,
+  },
+  apiInput: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radii.sm,
+    backgroundColor: colors.surface,
+    color: colors.text,
+    fontSize: 15,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm + 2,
+    marginBottom: spacing.md,
   },
   styleGrid: {
     flexDirection: 'row',
@@ -346,11 +426,27 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     marginTop: 2,
   },
-  currentModel: {
+  saveButton: {
+    backgroundColor: colors.neonPurple,
+    borderRadius: radii.sm,
+    padding: spacing.md,
+    alignItems: 'center',
+    marginBottom: spacing.sm,
+  },
+  saveButtonDisabled: {
+    opacity: 0.7,
+  },
+  saveButtonText: {
+    color: colors.black,
+    fontWeight: '700',
+    fontSize: 16,
+  },
+  saveMessage: {
     fontSize: 13,
     color: colors.neonPurpleBright,
-    fontWeight: '600',
+    textAlign: 'center',
     marginBottom: spacing.md,
+    fontWeight: '600',
   },
   secondaryButton: {
     borderWidth: 1,

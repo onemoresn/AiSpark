@@ -51,24 +51,6 @@ module.exports = {
     experiments: {
       baseUrl: '/AiSpark',
     },
-    plugins: [
-      'expo-dev-client',
-      [
-        'llama.rn',
-        {
-          enableEntitlements: true,
-          entitlementsProfile: 'production',
-          forceCxx20: true,
-        },
-      ],
-      [
-        'expo-build-properties',
-        {
-          ios: {
-            deploymentTarget: '16.4',
-          },
-        },
-      ],
-    ],
+    plugins: [],
   },
 };

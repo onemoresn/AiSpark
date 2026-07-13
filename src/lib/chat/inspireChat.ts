@@ -5,7 +5,7 @@ import { executeTool } from '../tools';
 import { detectWeatherIntent } from '../tools/weather';
 import { detectNewsIntent } from '../tools/news';
 import { detectSearchIntent } from '../tools/webSearch';
-import { generateCompletion, isModelReady, isOnDeviceLLMSupported } from '../llm/llamaService';
+import { generateCompletion, isModelReady, refreshGeminiConfig } from '../llm/geminiService';
 
 function randomClosing(): string {
   return CLOSING_LINES[Math.floor(Math.random() * CLOSING_LINES.length)];
@@ -43,7 +43,7 @@ async function gatherToolContext(
   return null;
 }
 
-async function respondWithOnDeviceLLM(
+async function respondWithGemini(
   userMessage: string,
   history: ChatMessage[],
   location: LocationCoords | null
@@ -127,8 +127,9 @@ export async function generateInspireResponse(
 
   let content: string;
   try {
-    if (isOnDeviceLLMSupported() && isModelReady()) {
-      content = await respondWithOnDeviceLLM(userMessage, history, location);
+    await refreshGeminiConfig();
+    if (isModelReady()) {
+      content = await respondWithGemini(userMessage, history, location);
     } else {
       content = await respondLocally(userMessage, location);
     }

@@ -18,9 +18,9 @@ import {
   generateInspireResponse,
   WELCOME_MESSAGE,
 } from '../lib/chat/inspireChat';
-import { loadChatHistory, saveChatHistory, clearChatHistory } from '../lib/storage';
+import { loadChatHistory, saveChatHistory, clearChatHistory, getAppSettings, type AppSettings } from '../lib/storage';
 import { MAX_CHAT_MESSAGES } from '../constants/chat';
-import { useLlama } from '../context/LlamaContext';
+import { useGemini } from '../context/GeminiContext';
 import { useVoice } from '../hooks/useVoice';
 import { ParticleBackground } from './ParticleBackground';
 import { MessageBubble } from './MessageBubble';
@@ -34,7 +34,7 @@ function trimMessages(messages: ChatMessage[]): ChatMessage[] {
 }
 
 export function ChatScreen() {
-  const { isReady, modelName, isWeb } = useLlama();
+  const { hasApiKey, modelName, saveConfiguration } = useGemini();
   const {
     supported: voiceSupported,
     isListening,
@@ -42,11 +42,8 @@ export function ChatScreen() {
     isPreviewing,
     transcript,
     voiceEnabled,
-    setVoiceEnabled,
     availableVoices,
-    voicePreference,
-    selectVoice,
-    selectVoiceStyle,
+    applyConfiguration,
     previewVoice,
     toggleListening,
     speak,
@@ -57,6 +54,7 @@ export function ChatScreen() {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [savedSettings, setSavedSettings] = useState<AppSettings | null>(null);
   const listRef = useRef<FlatList>(null);
   const loadingRef = useRef(false);
   const shouldScrollRef = useRef(true);
@@ -80,6 +78,18 @@ export function ChatScreen() {
       setInput(transcript);
     }
   }, [transcript, isListening]);
+
+  useEffect(() => {
+    if (settingsOpen) {
+      getAppSettings().then(setSavedSettings);
+    }
+  }, [settingsOpen]);
+
+  const handleSaveConfiguration = async (settings: AppSettings) => {
+    await saveConfiguration(settings);
+    await applyConfiguration(settings.voiceEnabled, settings.voicePreference);
+    setSavedSettings(settings);
+  };
 
   const scrollToEnd = useCallback(() => {
     if (!shouldScrollRef.current) return;
@@ -162,11 +172,9 @@ export function ChatScreen() {
                   ? 'Speaking...'
                   : isListening
                     ? 'Listening...'
-                    : isWeb
-                      ? 'Your AI Assistant'
-                      : isReady
-                        ? `${modelName} · On-device`
-                        : 'Your AI Assistant'}
+                    : hasApiKey
+                      ? `${modelName} · Gemini`
+                      : 'Add API key in Settings'}
               </Text>
             </View>
           </View>
@@ -216,19 +224,18 @@ export function ChatScreen() {
         />
       </KeyboardAvoidingView>
 
-      <SettingsModal
-        visible={settingsOpen}
-        onClose={() => setSettingsOpen(false)}
-        onClearChat={handleClearChat}
-        voiceEnabled={voiceEnabled}
-        onVoiceToggle={setVoiceEnabled}
-        availableVoices={availableVoices}
-        voicePreference={voicePreference}
-        onSelectVoice={selectVoice}
-        onSelectStyle={selectVoiceStyle}
-        onPreviewVoice={previewVoice}
-        isPreviewing={isPreviewing}
-      />
+      {savedSettings && (
+        <SettingsModal
+          visible={settingsOpen}
+          onClose={() => setSettingsOpen(false)}
+          onClearChat={handleClearChat}
+          savedSettings={savedSettings}
+          onSaveConfiguration={handleSaveConfiguration}
+          availableVoices={availableVoices}
+          onPreviewVoice={previewVoice}
+          isPreviewing={isPreviewing}
+        />
+      )}
     </View>
   );
 }

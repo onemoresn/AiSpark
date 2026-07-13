@@ -40,6 +40,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     gap: spacing.sm,
+    alignItems: 'center',
   },
   chip: {
     backgroundColor: colors.surface,
@@ -48,7 +49,9 @@ const styles = StyleSheet.create({
     borderRadius: radii.full,
     borderWidth: 1,
     borderColor: colors.neonPurpleDim,
-    marginRight: spacing.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 36,
   },
   chipDisabled: {
     opacity: 0.5,
@@ -57,5 +60,7 @@ const styles = StyleSheet.create({
     color: colors.neonPurpleBright,
     fontSize: 14,
     fontWeight: '600',
+    textAlign: 'center',
+    lineHeight: 18,
   },
 });

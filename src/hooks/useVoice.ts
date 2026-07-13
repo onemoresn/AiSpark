@@ -6,12 +6,8 @@ import {
   VOICE_PREVIEW_TEXT,
   type VoicePreference,
 } from '../lib/voice/voiceConfig';
+import { getAppSettings } from '../lib/storage';
 import {
-  getStoredVoicePreference,
-  saveVoicePreference,
-} from '../lib/storage';
-import {
-  getVoicePreference,
   setVoicePreference as applyVoicePreference,
 } from '../lib/voice/speechSettings';
 
@@ -29,12 +25,17 @@ export function useVoice() {
 
   const supported = VoiceService.isVoiceSupported();
 
-  useEffect(() => {
-    (async () => {
-      const stored = await getStoredVoicePreference();
-      applyVoicePreference(stored);
-      setVoicePreferenceState(stored);
+  const loadVoiceSettings = useCallback(async () => {
+    const settings = await getAppSettings();
+    applyVoicePreference(settings.voicePreference);
+    setVoicePreferenceState(settings.voicePreference);
+    setVoiceEnabled(settings.voiceEnabled);
+  }, []);
 
+  useEffect(() => {
+    loadVoiceSettings();
+
+    (async () => {
       try {
         const voices = await VoiceService.getEnglishVoices();
         setAvailableVoices(voices);
@@ -42,34 +43,30 @@ export function useVoice() {
         setAvailableVoices([]);
       }
     })();
-  }, []);
+  }, [loadVoiceSettings]);
 
-  const updateVoicePreference = useCallback(async (next: VoicePreference) => {
-    applyVoicePreference(next);
-    setVoicePreferenceState(next);
-    await saveVoicePreference(next);
-  }, []);
-
-  const selectVoice = useCallback(
-    async (voiceId: string | null) => {
-      await updateVoicePreference({ ...getVoicePreference(), voiceId });
+  const applyConfiguration = useCallback(
+    async (voiceEnabledNext: boolean, voicePreferenceNext: VoicePreference) => {
+      applyVoicePreference(voicePreferenceNext);
+      setVoicePreferenceState(voicePreferenceNext);
+      setVoiceEnabled(voiceEnabledNext);
     },
-    [updateVoicePreference]
+    []
   );
 
-  const selectVoiceStyle = useCallback(
-    async (pitch: number, rate: number) => {
-      await updateVoicePreference({ ...getVoicePreference(), pitch, rate });
+  const previewVoice = useCallback(
+    async (preference?: VoicePreference) => {
+      if (preference) {
+        applyVoicePreference(preference);
+      }
+      setIsPreviewing(true);
+      VoiceService.stopSpeaking();
+      await VoiceService.speak(VOICE_PREVIEW_TEXT);
+      setIsPreviewing(false);
+      applyVoicePreference(voicePreference);
     },
-    [updateVoicePreference]
+    [voicePreference]
   );
-
-  const previewVoice = useCallback(async () => {
-    setIsPreviewing(true);
-    VoiceService.stopSpeaking();
-    await VoiceService.speak(VOICE_PREVIEW_TEXT);
-    setIsPreviewing(false);
-  }, []);
 
   const startListening = useCallback((onFinal?: (text: string) => void) => {
     if (!supported) return;
@@ -130,15 +127,14 @@ export function useVoice() {
     isPreviewing,
     transcript,
     voiceEnabled,
-    setVoiceEnabled,
     availableVoices,
     voicePreference,
-    selectVoice,
-    selectVoiceStyle,
+    applyConfiguration,
     previewVoice,
     startListening,
     stopListening,
     toggleListening,
     speak,
+    reloadVoiceSettings: loadVoiceSettings,
   };
 }
