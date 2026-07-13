@@ -117,20 +117,22 @@ export function ChatScreen() {
         return trimMessages([...prev, userMsg]);
       });
 
+      let assistantMsg: ChatMessage | null = null;
+
       try {
-        const assistantMsg = await generateInspireResponse(trimmed, historyForResponse);
+        assistantMsg = await generateInspireResponse(trimmed, historyForResponse);
         const final = trimMessages([...historyForResponse, userMsg, assistantMsg]);
 
         setMessages(final);
         await saveChatHistory(final);
         scrollToEnd();
-
-        if (voiceEnabled) {
-          await speak(assistantMsg.content);
-        }
       } finally {
         loadingRef.current = false;
         setLoading(false);
+      }
+
+      if (voiceEnabled && assistantMsg) {
+        void speak(assistantMsg.content);
       }
     },
     [scrollToEnd, stopListening, speak, voiceEnabled]

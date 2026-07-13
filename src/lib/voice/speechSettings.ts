@@ -34,11 +34,17 @@ export async function getEnglishVoices() {
 export async function speakText(text: string): Promise<void> {
   const clean = text.replace(/\n+/g, '. ').slice(0, 500);
   return new Promise((resolve) => {
+    const finish = () => {
+      clearTimeout(timeout);
+      resolve();
+    };
+    const timeout = setTimeout(finish, 60_000);
+
     Speech.speak(clean, {
       ...getSpeechOptions(),
-      onDone: () => resolve(),
-      onStopped: () => resolve(),
-      onError: () => resolve(),
+      onDone: finish,
+      onStopped: finish,
+      onError: finish,
     });
   });
 }
