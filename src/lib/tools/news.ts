@@ -33,10 +33,20 @@ function parseRssItems(xml: string): NewsArticle[] {
 }
 
 export async function getNews(): Promise<NewsArticle[]> {
-  const response = await fetch('https://feeds.bbci.co.uk/news/world/rss.xml');
-  if (!response.ok) throw new Error('News unavailable');
+  const feedUrl = 'https://feeds.bbci.co.uk/news/world/rss.xml';
+  let xml: string;
 
-  const xml = await response.text();
+  try {
+    const response = await fetch(feedUrl);
+    if (!response.ok) throw new Error('Direct fetch failed');
+    xml = await response.text();
+  } catch {
+    const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(feedUrl)}`;
+    const proxyResponse = await fetch(proxyUrl);
+    if (!proxyResponse.ok) throw new Error('News unavailable');
+    xml = await proxyResponse.text();
+  }
+
   const articles = parseRssItems(xml);
 
   if (articles.length === 0) throw new Error('No headlines found');
@@ -57,5 +67,7 @@ export function formatNewsResponse(articles: NewsArticle[]): string {
 }
 
 export function detectNewsIntent(message: string): boolean {
-  return /\b(news|headlines|happening today|what.?s going on|current events|world today)\b/i.test(message);
+  return /\b(news|headlines|headline|happening today|what.?s going on|current events|world today|in the news)\b/i.test(
+    message
+  );
 }

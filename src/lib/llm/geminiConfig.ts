@@ -9,8 +9,8 @@ export const GEMINI_MODELS = {
     name: 'Gemini 3 Flash',
     description: 'Latest Flash model with strong reasoning',
   },
-  'gemini-3.5-flash-preview': {
-    id: 'gemini-3.5-flash-preview',
+  'gemini-3.5-flash': {
+    id: 'gemini-3.5-flash',
     name: 'Gemini 3.5 Flash',
     description: 'Newest Flash — best balance of speed and quality',
   },

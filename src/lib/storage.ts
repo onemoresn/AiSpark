@@ -18,8 +18,18 @@ const VOICE_PREF_KEY = '@spark_voice_preference';
 
 const VALID_MODEL_IDS = new Set(Object.keys(GEMINI_MODELS));
 
+const LEGACY_MODEL_IDS: Record<string, GeminiModelId> = {
+  'gemini-3.5-flash-preview': 'gemini-3.5-flash',
+};
+
 function isValidModelId(value: string): value is GeminiModelId {
   return VALID_MODEL_IDS.has(value);
+}
+
+function resolveModelId(value: string | null): GeminiModelId {
+  if (value && isValidModelId(value)) return value;
+  if (value && LEGACY_MODEL_IDS[value]) return LEGACY_MODEL_IDS[value];
+  return DEFAULT_GEMINI_MODEL;
 }
 
 export interface AppSettings {
@@ -53,8 +63,8 @@ export async function getGeminiApiKey(): Promise<string | null> {
 
 export async function getSelectedGeminiModel(): Promise<GeminiModelId | null> {
   const value = await AsyncStorage.getItem(GEMINI_MODEL_KEY);
-  if (value && isValidModelId(value)) return value;
-  return null;
+  if (!value) return null;
+  return resolveModelId(value);
 }
 
 export async function getVoiceEnabled(): Promise<boolean> {

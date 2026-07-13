@@ -3,9 +3,9 @@ import { View, Text, TouchableOpacity, ScrollView, StyleSheet } from 'react-nati
 import { colors, radii, spacing } from '../constants/theme';
 
 const ACTIONS = [
-  { label: "Today's weather", message: "What does today look like?" },
+  { label: "Today's weather", message: 'What does today look like?' },
   { label: 'News headlines', message: "What's happening in the news today?" },
-  { label: 'Inspire me', message: 'I could use some encouragement right now.' },
+  { label: 'Inspire me', message: 'Inspire me — I need uplifting encouragement today.' },
 ];
 
 interface Props {

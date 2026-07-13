@@ -101,7 +101,8 @@ async function respondLocally(
     );
   }
 
-  const inspireMe = /\b(inspire|motivat|encourage|boost|uplift|feeling down|need help)\b/i;
+  const inspireMe =
+    /\b(inspire|inspiration|motivat|encourage|encouragement|boost|uplift|feeling down|need help)\b/i;
   if (inspireMe.test(userMessage)) {
     const boosts = [
       "You don't have to have it all figured out to move forward. One honest step today is enough to build real momentum.",
@@ -125,22 +126,17 @@ export async function generateInspireResponse(
 ): Promise<ChatMessage> {
   const location = await getUserLocation().catch(() => null);
 
+  await refreshGeminiConfig();
+
   let content: string;
-  try {
-    await refreshGeminiConfig();
-    if (isModelReady()) {
-      content = await respondWithGemini(userMessage, history, location);
-    } else {
-      content = await respondLocally(userMessage, location);
-    }
-  } catch {
+  if (isModelReady()) {
     try {
-      content = await respondLocally(userMessage, location);
+      content = await respondWithGemini(userMessage, history, location);
     } catch {
-      content =
-        "Even when things don't go perfectly, your willingness to show up still matters. " +
-        `Take a breath, reset, and keep going.\n\n${randomClosing()}`;
+      content = await respondLocally(userMessage, location);
     }
+  } else {
+    content = await respondLocally(userMessage, location);
   }
 
   return {
