@@ -1,50 +1,65 @@
-import * as Speech from 'expo-speech';
-import type { SpeechOptions } from 'expo-speech';
+import { getGeminiApiKey, getStoredVoicePreference } from '../storage';
+import {
+  canPlayGeminiAudio,
+  playGeminiAudio,
+  primeAudioPlayback,
+  stopAudioPlayback,
+} from './audioPlayback';
+import { synthesizeWithGemini } from './geminiTtsService';
 import {
   DEFAULT_VOICE_PREFERENCE,
+  getAvailableVoices,
   type VoicePreference,
 } from './voiceConfig';
 
 let preference: VoicePreference = { ...DEFAULT_VOICE_PREFERENCE };
+let lastSpeakError: string | null = null;
 
 export function getVoicePreference(): VoicePreference {
   return { ...preference };
+}
+
+export function getLastSpeakError(): string | null {
+  return lastSpeakError;
 }
 
 export function setVoicePreference(next: VoicePreference): void {
   preference = { ...next };
 }
 
-export function getSpeechOptions(): SpeechOptions {
-  return {
-    language: 'en-US',
-    pitch: preference.pitch,
-    rate: preference.rate,
-    ...(preference.voiceId ? { voice: preference.voiceId } : {}),
-  };
+export async function syncVoicePreferenceFromStorage(): Promise<VoicePreference> {
+  const stored = await getStoredVoicePreference();
+  preference = stored;
+  return stored;
 }
 
-export async function getEnglishVoices() {
-  const voices = await Speech.getAvailableVoicesAsync();
-  return voices
-    .filter((v) => v.language.toLowerCase().startsWith('en'))
-    .sort((a, b) => a.name.localeCompare(b.name));
-}
+export { getAvailableVoices, primeAudioPlayback };
 
-export async function speakText(text: string): Promise<void> {
+export async function speakText(
+  text: string,
+  preferenceOverride?: VoicePreference
+): Promise<void> {
   const clean = text.replace(/\n+/g, '. ').slice(0, 500);
-  return new Promise((resolve) => {
-    const finish = () => {
-      clearTimeout(timeout);
-      resolve();
-    };
-    const timeout = setTimeout(finish, 60_000);
+  const pref = preferenceOverride ?? (await syncVoicePreferenceFromStorage());
+  preference = pref;
+  lastSpeakError = null;
 
-    Speech.speak(clean, {
-      ...getSpeechOptions(),
-      onDone: finish,
-      onStopped: finish,
-      onError: finish,
-    });
-  });
+  const apiKey = await getGeminiApiKey();
+
+  if (!apiKey?.trim()) {
+    lastSpeakError = 'Add your Gemini API key in Settings for natural voice.';
+    throw new Error(lastSpeakError);
+  }
+
+  if (!canPlayGeminiAudio()) {
+    lastSpeakError = 'Natural voice playback requires the web app.';
+    throw new Error(lastSpeakError);
+  }
+
+  const audio = await synthesizeWithGemini(clean, pref, apiKey);
+  await playGeminiAudio(audio.data, audio.mimeType);
+}
+
+export function stopSpeaking(): void {
+  stopAudioPlayback();
 }

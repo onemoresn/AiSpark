@@ -1,5 +1,4 @@
-import * as Speech from 'expo-speech';
-import { speakText, getEnglishVoices } from './speechSettings';
+import { speakText, getAvailableVoices, primeAudioPlayback, stopSpeaking as stopSpeechOutput } from './speechSettings';
 
 export function isVoiceSupported(): boolean {
   return false;
@@ -14,10 +13,13 @@ export function startListening(
 
 export function stopListening(): void {}
 
-export const speak = speakText;
+export const speak = (
+  text: string,
+  preference?: import('./voiceConfig').VoicePreference
+) => speakText(text, preference);
 
 export function stopSpeaking(): void {
-  Speech.stop();
+  stopSpeechOutput();
 }
 
-export { getEnglishVoices };
+export { getAvailableVoices, primeAudioPlayback };

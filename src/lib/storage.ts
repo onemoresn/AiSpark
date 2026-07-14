@@ -6,7 +6,7 @@ import {
   type GeminiModelId,
 } from './llm/geminiConfig';
 import type { VoicePreference } from './voice/voiceConfig';
-import { DEFAULT_VOICE_PREFERENCE } from './voice/voiceConfig';
+import { DEFAULT_VOICE_PREFERENCE, resolveVoicePreference } from './voice/voiceConfig';
 import { MAX_CHAT_MESSAGES } from '../constants/chat';
 
 const CHAT_KEY = '@spark_chat_history';
@@ -20,6 +20,7 @@ const VALID_MODEL_IDS = new Set(Object.keys(GEMINI_MODELS));
 
 const LEGACY_MODEL_IDS: Record<string, GeminiModelId> = {
   'gemini-3.5-flash-preview': 'gemini-3.5-flash',
+  'gemini-2.5-flash': 'gemini-3.5-flash',
 };
 
 function isValidModelId(value: string): value is GeminiModelId {
@@ -77,12 +78,7 @@ export async function getStoredVoicePreference(): Promise<VoicePreference> {
   try {
     const raw = await AsyncStorage.getItem(VOICE_PREF_KEY);
     if (!raw) return { ...DEFAULT_VOICE_PREFERENCE };
-    const parsed = JSON.parse(raw) as VoicePreference;
-    return {
-      voiceId: parsed.voiceId ?? null,
-      pitch: parsed.pitch ?? DEFAULT_VOICE_PREFERENCE.pitch,
-      rate: parsed.rate ?? DEFAULT_VOICE_PREFERENCE.rate,
-    };
+    return resolveVoicePreference(JSON.parse(raw));
   } catch {
     return { ...DEFAULT_VOICE_PREFERENCE };
   }

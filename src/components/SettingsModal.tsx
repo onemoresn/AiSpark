@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Modal,
   View,
@@ -12,22 +12,23 @@ import {
   TextInput,
 } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
-import type { Voice } from 'expo-speech';
 import {
   GEMINI_MODEL_IDS,
   GEMINI_MODELS,
+  DEFAULT_GEMINI_MODEL,
   type GeminiModelId,
 } from '../lib/llm/geminiConfig';
 import {
   formatVoiceLabel,
   VOICE_STYLES,
   DEFAULT_VOICE_PREFERENCE,
+  type SparkVoice,
   type VoicePreference,
 } from '../lib/voice/voiceConfig';
 import type { AppSettings } from '../lib/storage';
+import { validateGeminiApiKey, type ApiKeyValidation } from '../lib/llm/geminiApi';
 import { colors, radii, spacing } from '../constants/theme';
 
-const DEFAULT_VOICE_VALUE = 'default';
 
 interface Props {
   visible: boolean;
@@ -35,7 +36,7 @@ interface Props {
   onClearChat: () => void;
   savedSettings: AppSettings;
   onSaveConfiguration: (settings: AppSettings) => Promise<void>;
-  availableVoices?: Voice[];
+  availableVoices?: SparkVoice[];
   onPreviewVoice?: (preference: VoicePreference) => void;
   isPreviewing?: boolean;
 }
@@ -51,13 +52,15 @@ export function SettingsModal({
   isPreviewing,
 }: Props) {
   const [draftApiKey, setDraftApiKey] = useState('');
-  const [draftModelId, setDraftModelId] = useState<GeminiModelId>('gemini-2.5-flash');
+  const [draftModelId, setDraftModelId] = useState<GeminiModelId>(DEFAULT_GEMINI_MODEL);
   const [draftVoiceEnabled, setDraftVoiceEnabled] = useState(true);
-  const [draftVoiceId, setDraftVoiceId] = useState<string | null>(null);
-  const [draftPitch, setDraftPitch] = useState(DEFAULT_VOICE_PREFERENCE.pitch);
-  const [draftRate, setDraftRate] = useState(DEFAULT_VOICE_PREFERENCE.rate);
+  const [draftVoiceId, setDraftVoiceId] = useState(DEFAULT_VOICE_PREFERENCE.voiceId);
+  const [draftStyleId, setDraftStyleId] = useState(DEFAULT_VOICE_PREFERENCE.styleId);
   const [saving, setSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
+  const [apiKeyStatus, setApiKeyStatus] = useState<ApiKeyValidation | null>(null);
+  const [testingApiKey, setTestingApiKey] = useState(false);
+  const lastTestedKeyRef = useRef('');
 
   useEffect(() => {
     if (!visible) return;
@@ -65,20 +68,69 @@ export function SettingsModal({
     setDraftModelId(savedSettings.modelId);
     setDraftVoiceEnabled(savedSettings.voiceEnabled);
     setDraftVoiceId(savedSettings.voicePreference.voiceId);
-    setDraftPitch(savedSettings.voicePreference.pitch);
-    setDraftRate(savedSettings.voicePreference.rate);
+    setDraftStyleId(savedSettings.voicePreference.styleId);
     setSaveMessage(null);
+    setApiKeyStatus(null);
+    lastTestedKeyRef.current = savedSettings.apiKey.trim();
   }, [visible, savedSettings]);
 
-  const activeStyle = VOICE_STYLES.find(
-    (s) => s.pitch === draftPitch && s.rate === draftRate
-  );
-  const pickerValue = draftVoiceId ?? DEFAULT_VOICE_VALUE;
+  useEffect(() => {
+    if (!visible) return;
+
+    const trimmed = draftApiKey.trim();
+    if (trimmed.length < 20) {
+      setApiKeyStatus(
+        trimmed.length === 0
+          ? null
+          : {
+              chatOk: false,
+              voiceOk: false,
+              status: 'empty',
+              message: 'Keep typing — Gemini keys are longer than this.',
+            }
+      );
+      setTestingApiKey(false);
+      return;
+    }
+
+    if (trimmed === lastTestedKeyRef.current && apiKeyStatus?.status === 'ok') {
+      return;
+    }
+
+    setTestingApiKey(true);
+    setApiKeyStatus({
+      chatOk: false,
+      voiceOk: false,
+      status: 'testing',
+      message: 'Testing your API key…',
+    });
+
+    const timer = setTimeout(() => {
+      validateGeminiApiKey(trimmed, draftModelId)
+        .then((result) => {
+          lastTestedKeyRef.current = trimmed;
+          setApiKeyStatus(result);
+        })
+        .catch(() => {
+          setApiKeyStatus({
+            chatOk: false,
+            voiceOk: false,
+            status: 'fail',
+            message: 'Could not test the API key. Check your connection.',
+          });
+        })
+        .finally(() => setTestingApiKey(false));
+    }, 700);
+
+    return () => clearTimeout(timer);
+  }, [draftApiKey, draftModelId, visible]);
+
+  const activeStyle = VOICE_STYLES.find((s) => s.id === draftStyleId);
+  const pickerValue = draftVoiceId;
 
   const draftVoicePreference: VoicePreference = {
     voiceId: draftVoiceId,
-    pitch: draftPitch,
-    rate: draftRate,
+    styleId: draftStyleId,
   };
 
   const handleSave = async () => {
@@ -120,6 +172,36 @@ export function SettingsModal({
               autoCorrect={false}
               secureTextEntry
             />
+
+            {(testingApiKey || apiKeyStatus) && (
+              <View style={styles.apiStatusRow}>
+                {testingApiKey && (
+                  <ActivityIndicator size="small" color={colors.neonPurple} />
+                )}
+                <Text
+                  style={[
+                    styles.apiStatusText,
+                    apiKeyStatus?.status === 'ok' && styles.apiStatusOk,
+                    apiKeyStatus?.status === 'partial' && styles.apiStatusPartial,
+                    (apiKeyStatus?.status === 'fail' || apiKeyStatus?.status === 'empty') &&
+                      styles.apiStatusFail,
+                  ]}
+                >
+                  {apiKeyStatus?.message ?? 'Testing your API key…'}
+                </Text>
+              </View>
+            )}
+
+            {apiKeyStatus && apiKeyStatus.status !== 'empty' && apiKeyStatus.status !== 'testing' && (
+              <View style={styles.apiChecklist}>
+                <Text style={[styles.apiCheckItem, apiKeyStatus.chatOk && styles.apiCheckOk]}>
+                  {apiKeyStatus.chatOk ? '✓' : '✗'} Chat API
+                </Text>
+                <Text style={[styles.apiCheckItem, apiKeyStatus.voiceOk && styles.apiCheckOk]}>
+                  {apiKeyStatus.voiceOk ? '✓' : '✗'} Natural voice
+                </Text>
+              </View>
+            )}
 
             <Text style={[styles.sectionTitle, styles.modelSection]}>AI model</Text>
             <Text style={styles.hint}>Powered by Google Gemini — fast cloud responses.</Text>
@@ -163,8 +245,8 @@ export function SettingsModal({
                     key={style.id}
                     style={[styles.styleChip, selected && styles.styleChipSelected]}
                     onPress={() => {
-                      setDraftPitch(style.pitch);
-                      setDraftRate(style.rate);
+                      setDraftStyleId(style.id);
+                      setDraftVoiceId(style.voiceId);
                     }}
                     activeOpacity={0.7}
                   >
@@ -182,7 +264,7 @@ export function SettingsModal({
               <TouchableOpacity
                 style={styles.previewButton}
                 onPress={() => onPreviewVoice?.(draftVoicePreference)}
-                disabled={isPreviewing}
+                disabled={isPreviewing || testingApiKey || apiKeyStatus?.voiceOk === false}
                 activeOpacity={0.7}
               >
                 {isPreviewing ? (
@@ -192,23 +274,18 @@ export function SettingsModal({
                 )}
               </TouchableOpacity>
             </View>
-            <Text style={styles.hint}>English voices available on your device</Text>
+            <Text style={styles.hint}>
+              Natural Gemini voices — each voice sounds distinct. Requires a working API key.
+            </Text>
 
             <View style={styles.pickerContainer}>
               <Picker
                 selectedValue={pickerValue}
-                onValueChange={(value) =>
-                  setDraftVoiceId(value === DEFAULT_VOICE_VALUE ? null : value)
-                }
+                onValueChange={(value) => setDraftVoiceId(value)}
                 style={styles.picker}
                 dropdownIconColor={colors.neonPurple}
                 itemStyle={Platform.OS === 'ios' ? styles.pickerItemIOS : undefined}
               >
-                <Picker.Item
-                  label="System default"
-                  value={DEFAULT_VOICE_VALUE}
-                  color={Platform.OS === 'android' ? colors.text : undefined}
-                />
                 {availableVoices.map((voice) => (
                   <Picker.Item
                     key={voice.identifier}
@@ -222,7 +299,7 @@ export function SettingsModal({
 
             {availableVoices.length === 0 && (
               <Text style={styles.emptyVoices}>
-                No extra English voices found. Spark will use the system default.
+                Voice options could not be loaded. Spark will use the default voice.
               </Text>
             )}
 
@@ -327,7 +404,41 @@ const styles = StyleSheet.create({
     fontSize: 15,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm + 2,
+    marginBottom: spacing.sm,
+  },
+  apiStatusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  apiStatusText: {
+    flex: 1,
+    fontSize: 13,
+    color: colors.textMuted,
+    lineHeight: 18,
+  },
+  apiStatusOk: {
+    color: colors.neonPurpleBright,
+  },
+  apiStatusPartial: {
+    color: '#E8B84A',
+  },
+  apiStatusFail: {
+    color: '#FF6B8A',
+  },
+  apiChecklist: {
+    flexDirection: 'row',
+    gap: spacing.md,
     marginBottom: spacing.md,
+  },
+  apiCheckItem: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.textMuted,
+  },
+  apiCheckOk: {
+    color: colors.neonPurpleBright,
   },
   styleGrid: {
     flexDirection: 'row',

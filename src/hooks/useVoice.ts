@@ -1,14 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { Voice } from 'expo-speech';
 import * as VoiceService from '../lib/voice/voiceService';
 import {
   DEFAULT_VOICE_PREFERENCE,
+  getAvailableVoices,
   VOICE_PREVIEW_TEXT,
+  type SparkVoice,
   type VoicePreference,
 } from '../lib/voice/voiceConfig';
 import { getAppSettings } from '../lib/storage';
 import {
   setVoicePreference as applyVoicePreference,
+  syncVoicePreferenceFromStorage,
 } from '../lib/voice/speechSettings';
 
 export function useVoice() {
@@ -17,11 +19,16 @@ export function useVoice() {
   const [isPreviewing, setIsPreviewing] = useState(false);
   const [transcript, setTranscript] = useState('');
   const [voiceEnabled, setVoiceEnabled] = useState(true);
-  const [availableVoices, setAvailableVoices] = useState<Voice[]>([]);
+  const [availableVoices, setAvailableVoices] = useState<SparkVoice[]>([]);
   const [voicePreference, setVoicePreferenceState] = useState<VoicePreference>(
     DEFAULT_VOICE_PREFERENCE
   );
+  const voicePreferenceRef = useRef(voicePreference);
+  const voiceEnabledRef = useRef(voiceEnabled);
   const onFinalRef = useRef<((text: string) => void) | null>(null);
+
+  voicePreferenceRef.current = voicePreference;
+  voiceEnabledRef.current = voiceEnabled;
 
   const supported = VoiceService.isVoiceSupported();
 
@@ -34,15 +41,7 @@ export function useVoice() {
 
   useEffect(() => {
     loadVoiceSettings();
-
-    (async () => {
-      try {
-        const voices = await VoiceService.getEnglishVoices();
-        setAvailableVoices(voices);
-      } catch {
-        setAvailableVoices([]);
-      }
-    })();
+    setAvailableVoices(getAvailableVoices());
   }, [loadVoiceSettings]);
 
   const applyConfiguration = useCallback(
@@ -54,19 +53,25 @@ export function useVoice() {
     []
   );
 
-  const previewVoice = useCallback(
-    async (preference?: VoicePreference) => {
-      if (preference) {
-        applyVoicePreference(preference);
-      }
-      setIsPreviewing(true);
-      VoiceService.stopSpeaking();
-      await VoiceService.speak(VOICE_PREVIEW_TEXT);
+  const previewVoice = useCallback(async (preference?: VoicePreference) => {
+    VoiceService.primeAudioPlayback();
+    const saved = await syncVoicePreferenceFromStorage();
+    const previewPref = preference ?? saved;
+
+    applyVoicePreference(previewPref);
+    setIsPreviewing(true);
+    VoiceService.stopSpeaking();
+
+    try {
+      await VoiceService.speak(VOICE_PREVIEW_TEXT, previewPref);
+    } catch {
+      // Preview failed — API key status in Settings shows details.
+    } finally {
       setIsPreviewing(false);
-      applyVoicePreference(voicePreference);
-    },
-    [voicePreference]
-  );
+      applyVoicePreference(saved);
+      setVoicePreferenceState(saved);
+    }
+  }, []);
 
   const startListening = useCallback((onFinal?: (text: string) => void) => {
     if (!supported) return;
@@ -91,16 +96,22 @@ export function useVoice() {
     setIsListening(false);
   }, []);
 
-  const speak = useCallback(
-    async (text: string) => {
-      if (!voiceEnabled || !text.trim()) return;
-      setIsSpeaking(true);
-      VoiceService.stopSpeaking();
-      await VoiceService.speak(text);
+  const speak = useCallback(async (text: string, preference?: VoicePreference) => {
+    if (!voiceEnabledRef.current || !text.trim()) return;
+
+    VoiceService.primeAudioPlayback();
+    setIsSpeaking(true);
+    VoiceService.stopSpeaking();
+
+    try {
+      const pref = preference ?? voicePreferenceRef.current;
+      await VoiceService.speak(text, pref);
+    } catch {
+      // Reply still visible — voice errors surface in Settings API test.
+    } finally {
       setIsSpeaking(false);
-    },
-    [voiceEnabled]
-  );
+    }
+  }, []);
 
   const toggleListening = useCallback(
     (onFinal?: (text: string) => void) => {

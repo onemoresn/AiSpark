@@ -22,6 +22,10 @@ function extractSearchQuery(message: string): string {
     .trim();
 }
 
+function needsLocation(message: string): boolean {
+  return detectWeatherIntent(message);
+}
+
 async function gatherToolContext(
   userMessage: string,
   location: LocationCoords | null
@@ -48,11 +52,23 @@ async function respondWithGemini(
   history: ChatMessage[],
   location: LocationCoords | null
 ): Promise<string> {
+  const wantsWeather = detectWeatherIntent(userMessage);
+  const wantsNews = detectNewsIntent(userMessage);
   const toolContext = await gatherToolContext(userMessage, location);
+
+  // Weather and news tools already return polished copy — skip the extra Gemini round-trip.
+  if (toolContext && (wantsWeather || wantsNews)) {
+    return `${toolContext}\n\n${randomClosing()}`;
+  }
+
+  // Tool query but fetch failed — use local fallbacks instead of a truncated Gemini guess.
+  if ((wantsWeather || wantsNews) && !toolContext) {
+    return await respondLocally(userMessage, location);
+  }
 
   const recentHistory = history
     .filter((m) => m.id !== 'welcome')
-    .slice(-8)
+    .slice(-6)
     .map((m) => ({
       role: m.role as 'user' | 'assistant',
       content: m.content,
@@ -76,7 +92,7 @@ async function respondWithGemini(
 
   messages.push({ role: 'user', content: userMessage });
 
-  const response = await generateCompletion(messages, 350);
+  const response = await generateCompletion(messages);
   if (!response) {
     return `I'm right here with you. Take a breath and keep moving forward.\n\n${randomClosing()}`;
   }
@@ -124,9 +140,13 @@ export async function generateInspireResponse(
   userMessage: string,
   history: ChatMessage[]
 ): Promise<ChatMessage> {
-  const location = await getUserLocation().catch(() => null);
+  const location = needsLocation(userMessage)
+    ? await getUserLocation().catch(() => null)
+    : null;
 
-  await refreshGeminiConfig();
+  if (!isModelReady()) {
+    await refreshGeminiConfig();
+  }
 
   let content: string;
   if (isModelReady()) {

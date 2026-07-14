@@ -1,8 +1,10 @@
 import {
+  CHAT_MODEL_FALLBACKS,
   DEFAULT_GEMINI_MODEL,
   GEMINI_MODELS,
   type GeminiModelId,
 } from './geminiConfig';
+import { geminiFetch } from './geminiApi';
 import { getGeminiApiKey, getSelectedGeminiModel } from '../storage';
 
 type ChatRole = 'system' | 'user' | 'assistant';
@@ -14,12 +16,6 @@ type GeminiContent = {
 
 let cachedApiKey: string | null = null;
 let cachedModelId: GeminiModelId = DEFAULT_GEMINI_MODEL;
-
-const MODEL_FALLBACKS: GeminiModelId[] = [
-  'gemini-2.5-flash',
-  'gemini-3-flash-preview',
-  'gemini-3.5-flash',
-];
 
 export async function refreshGeminiConfig(): Promise<void> {
   cachedApiKey = await getGeminiApiKey();
@@ -63,15 +59,6 @@ function toGeminiContents(
   return merged;
 }
 
-async function geminiFetch(url: string, init: RequestInit): Promise<Response> {
-  try {
-    return await fetch(url, init);
-  } catch {
-    const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(url)}`;
-    return fetch(proxyUrl, init);
-  }
-}
-
 async function callGemini(
   modelId: string,
   apiKey: string,
@@ -81,13 +68,20 @@ async function callGemini(
 ): Promise<string> {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${encodeURIComponent(apiKey)}`;
 
+  const generationConfig: Record<string, unknown> = {
+    maxOutputTokens: maxTokens,
+    temperature: 0.85,
+    topP: 0.9,
+  };
+
+  // Gemini 3 models can spend output tokens on hidden "thinking" — disable for full replies.
+  if (modelId.includes('gemini-3')) {
+    generationConfig.thinkingConfig = { thinkingBudget: 0 };
+  }
+
   const body: Record<string, unknown> = {
     contents,
-    generationConfig: {
-      maxOutputTokens: maxTokens,
-      temperature: 0.85,
-      topP: 0.9,
-    },
+    generationConfig,
   };
 
   if (systemParts) {
@@ -107,12 +101,15 @@ async function callGemini(
 
   const data = (await response.json()) as {
     candidates?: Array<{
-      content?: { parts?: Array<{ text?: string }> };
+      content?: { parts?: Array<{ text?: string; thought?: boolean }> };
+      finishReason?: string;
     }>;
   };
 
-  const text = data.candidates?.[0]?.content?.parts
-    ?.map((p) => p.text ?? '')
+  const parts = data.candidates?.[0]?.content?.parts ?? [];
+  const text = parts
+    .filter((p) => p.text && p.thought !== true)
+    .map((p) => p.text ?? '')
     .join('')
     .trim();
 
@@ -121,7 +118,7 @@ async function callGemini(
 
 export async function generateCompletion(
   messages: Array<{ role: ChatRole; content: string }>,
-  maxTokens = 350
+  maxTokens = 1024
 ): Promise<string> {
   if (!cachedApiKey) await refreshGeminiConfig();
   const apiKey = cachedApiKey?.trim();
@@ -146,7 +143,7 @@ export async function generateCompletion(
 
   const modelsToTry = [
     cachedModelId,
-    ...MODEL_FALLBACKS.filter((id) => id !== cachedModelId),
+    ...CHAT_MODEL_FALLBACKS.filter((id) => id !== cachedModelId),
   ];
 
   let lastError: Error | null = null;

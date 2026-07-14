@@ -67,7 +67,7 @@ export function formatNewsResponse(articles: NewsArticle[]): string {
 }
 
 export function detectNewsIntent(message: string): boolean {
-  return /\b(news|headlines|headline|happening today|what.?s going on|current events|world today|in the news)\b/i.test(
+  return /\b(news|headlines|headline|in the news|news today|happening today|what.?s going on|current events|world today|what.?s happening)\b/i.test(
     message
   );
 }

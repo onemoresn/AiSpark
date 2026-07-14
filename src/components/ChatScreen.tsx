@@ -22,6 +22,7 @@ import { loadChatHistory, saveChatHistory, clearChatHistory, getAppSettings, typ
 import { MAX_CHAT_MESSAGES } from '../constants/chat';
 import { useGemini } from '../context/GeminiContext';
 import { useVoice } from '../hooks/useVoice';
+import * as VoiceService from '../lib/voice/voiceService';
 import { ParticleBackground } from './ParticleBackground';
 import { MessageBubble } from './MessageBubble';
 import { ChatInput } from './ChatInput';
@@ -43,6 +44,7 @@ export function ChatScreen() {
     transcript,
     voiceEnabled,
     availableVoices,
+    voicePreference,
     applyConfiguration,
     previewVoice,
     toggleListening,
@@ -102,6 +104,7 @@ export function ChatScreen() {
       if (!trimmed || loadingRef.current) return;
 
       stopListening();
+      VoiceService.primeAudioPlayback();
       shouldScrollRef.current = true;
       loadingRef.current = true;
       setLoading(true);
@@ -132,10 +135,10 @@ export function ChatScreen() {
       }
 
       if (voiceEnabled && assistantMsg) {
-        void speak(assistantMsg.content);
+        void speak(assistantMsg.content, voicePreference);
       }
     },
-    [scrollToEnd, stopListening, speak, voiceEnabled]
+    [scrollToEnd, stopListening, speak, voiceEnabled, voicePreference]
   );
 
   const sendMessageRef = useRef(sendMessage);
