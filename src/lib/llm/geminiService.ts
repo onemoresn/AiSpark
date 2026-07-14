@@ -63,13 +63,11 @@ async function callGemini(
   modelId: string,
   apiKey: string,
   systemParts: string,
-  contents: GeminiContent[],
-  maxTokens: number
+  contents: GeminiContent[]
 ): Promise<string> {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${encodeURIComponent(apiKey)}`;
 
   const generationConfig: Record<string, unknown> = {
-    maxOutputTokens: maxTokens,
     temperature: 0.85,
     topP: 0.9,
   };
@@ -117,8 +115,7 @@ async function callGemini(
 }
 
 export async function generateCompletion(
-  messages: Array<{ role: ChatRole; content: string }>,
-  maxTokens = 1024
+  messages: Array<{ role: ChatRole; content: string }>
 ): Promise<string> {
   if (!cachedApiKey) await refreshGeminiConfig();
   const apiKey = cachedApiKey?.trim();
@@ -149,7 +146,7 @@ export async function generateCompletion(
   let lastError: Error | null = null;
   for (const modelId of modelsToTry) {
     try {
-      const text = await callGemini(modelId, apiKey, systemParts, contents, maxTokens);
+      const text = await callGemini(modelId, apiKey, systemParts, contents);
       if (text) return text;
       lastError = new Error('Gemini returned an empty response');
     } catch (err) {
