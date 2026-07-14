@@ -21,6 +21,7 @@ import {
 import { loadChatHistory, saveChatHistory, clearChatHistory, getAppSettings, type AppSettings } from '../lib/storage';
 import { MAX_CHAT_MESSAGES } from '../constants/chat';
 import { useGemini } from '../context/GeminiContext';
+import { useNetworkStatus } from '../hooks/useNetworkStatus';
 import { useVoice } from '../hooks/useVoice';
 import * as VoiceService from '../lib/voice/voiceService';
 import { ParticleBackground } from './ParticleBackground';
@@ -35,7 +36,8 @@ function trimMessages(messages: ChatMessage[]): ChatMessage[] {
 }
 
 export function ChatScreen() {
-  const { hasApiKey, modelName, saveConfiguration } = useGemini();
+  const { hasApiKey, modelName, providerName, saveConfiguration } = useGemini();
+  const { isOnline } = useNetworkStatus();
   const {
     supported: voiceSupported,
     isListening,
@@ -177,9 +179,11 @@ export function ChatScreen() {
                   ? 'Speaking...'
                   : isListening
                     ? 'Listening...'
-                    : hasApiKey
-                      ? `${modelName} · Web + Gemini`
-                      : 'Web answers · Add key for voice & chat AI'}
+                    : !isOnline
+                      ? 'Offline · cached quotes & local replies'
+                      : hasApiKey
+                        ? `${modelName} · Web + ${providerName}`
+                        : 'Web answers · Add API key for chat AI'}
               </Text>
             </View>
           </View>

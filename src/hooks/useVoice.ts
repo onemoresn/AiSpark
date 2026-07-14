@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import * as VoiceService from '../lib/voice/voiceService';
 import {
   DEFAULT_VOICE_PREFERENCE,
-  getAvailableVoices,
   VOICE_PREVIEW_TEXT,
   type SparkVoice,
   type VoicePreference,
@@ -11,7 +10,9 @@ import { getAppSettings } from '../lib/storage';
 import {
   setVoicePreference as applyVoicePreference,
   syncVoicePreferenceFromStorage,
+  getAvailableVoicesForSettings,
 } from '../lib/voice/speechSettings';
+import { resolveTtsEngine } from '../lib/voice/ttsRouter';
 
 export function useVoice() {
   const [isListening, setIsListening] = useState(false);
@@ -34,14 +35,15 @@ export function useVoice() {
 
   const loadVoiceSettings = useCallback(async () => {
     const settings = await getAppSettings();
-    applyVoicePreference(settings.voicePreference);
-    setVoicePreferenceState(settings.voicePreference);
+    const engine = (await resolveTtsEngine(settings)) ?? 'openai';
+    setAvailableVoices(getAvailableVoicesForSettings(engine));
+    const pref = await syncVoicePreferenceFromStorage();
+    setVoicePreferenceState(pref);
     setVoiceEnabled(settings.voiceEnabled);
   }, []);
 
   useEffect(() => {
     loadVoiceSettings();
-    setAvailableVoices(getAvailableVoices());
   }, [loadVoiceSettings]);
 
   const applyConfiguration = useCallback(
@@ -49,6 +51,9 @@ export function useVoice() {
       applyVoicePreference(voicePreferenceNext);
       setVoicePreferenceState(voicePreferenceNext);
       setVoiceEnabled(voiceEnabledNext);
+      const settings = await getAppSettings();
+      const engine = (await resolveTtsEngine(settings)) ?? 'openai';
+      setAvailableVoices(getAvailableVoicesForSettings(engine));
     },
     []
   );

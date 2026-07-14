@@ -6,6 +6,7 @@ const ACTIONS = [
   { label: "Today's weather", message: 'What does today look like?' },
   { label: 'News headlines', message: "What's happening in the news today?" },
   { label: 'Inspire me', message: 'Inspire me — I need uplifting encouragement today.' },
+  { label: 'Quote', message: 'Share an uplifting quote with me.' },
 ];
 
 interface Props {

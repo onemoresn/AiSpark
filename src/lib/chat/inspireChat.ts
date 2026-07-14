@@ -1,7 +1,9 @@
 import { CLOSING_LINES } from '../inspire/systemPrompt';
 import type { ChatMessage, LocationCoords } from '../inspire/types';
 import { getUserLocation } from '../location';
-import { generateCompletion, isModelReady, refreshGeminiConfig } from '../llm/geminiService';
+import { generateCompletion, isModelReady, refreshLlmConfig } from '../llm/llmService';
+import { respondLocally, respondOffline } from '../offline/localResponses';
+import { isBrowserOnline, isNetworkError } from '../offline/networkStatus';
 import { executeTool } from '../tools';
 import { detectNewsIntent } from '../tools/news';
 import { detectWeatherIntent } from '../tools/weather';
@@ -49,7 +51,8 @@ async function gatherWebContext(
       const query = buildWebSearchQuery(userMessage);
       return await executeTool('web_search', { query }, location);
     }
-  } catch {
+  } catch (err) {
+    if (isNetworkError(err) || !isBrowserOnline()) return null;
     return null;
   }
   return null;
@@ -59,6 +62,8 @@ async function respondFromWeb(
   userMessage: string,
   location: LocationCoords | null
 ): Promise<string | null> {
+  if (!isBrowserOnline()) return null;
+
   const webContext = await gatherWebContext(userMessage, location);
   if (webContext) {
     return `${webContext}\n\n${randomClosing()}`;
@@ -66,7 +71,7 @@ async function respondFromWeb(
   return null;
 }
 
-async function respondWithGemini(
+async function respondWithLlm(
   userMessage: string,
   history: ChatMessage[],
   location: LocationCoords | null
@@ -96,89 +101,73 @@ async function respondWithGemini(
 
   const response = await generateCompletion(messages);
   if (!response) {
-    throw new Error('Gemini returned an empty response');
+    throw new Error('AI returned an empty response');
   }
   return response;
-}
-
-async function respondLocally(userMessage: string): Promise<string> {
-  const greetings = /\b(hi|hello|hey|good morning|good afternoon|good evening)\b/i;
-  if (greetings.test(userMessage)) {
-    return (
-      "Hey there — I'm Spark, and I'm glad you're here. " +
-      "Whether you need a weather check, today's headlines, or just a boost of encouragement, I've got you. " +
-      `What would lift your spirit right now?\n\n${randomClosing()}`
-    );
-  }
-
-  const inspireMe =
-    /\b(inspire|inspiration|motivat|encourage|encouragement|boost|uplift|feeling down|need help)\b/i;
-  if (inspireMe.test(userMessage)) {
-    const boosts = [
-      "You don't have to have it all figured out to move forward. One honest step today is enough to build real momentum.",
-      "Progress isn't always loud. Sometimes it's simply showing up, breathing deep, and choosing to try again.",
-      "The version of you that's pushing through right now is stronger than you realize. Trust that quiet resilience.",
-      "Every small win compounds. Celebrate what you've already handled — it counts more than you think.",
-    ];
-    return `${boosts[Math.floor(Math.random() * boosts.length)]}\n\n${randomClosing()}`;
-  }
-
-  return (
-    "I'm here with you. Ask me about today's weather, what's in the news, or anything you're curious about — " +
-    "or just tell me how you're feeling and we'll find a spark of momentum together.\n\n" +
-    randomClosing()
-  );
 }
 
 export async function generateInspireResponse(
   userMessage: string,
   history: ChatMessage[]
 ): Promise<ChatMessage> {
-  const location = needsLocation(userMessage)
-    ? await getUserLocation().catch(() => null)
-    : null;
+  const offline = !isBrowserOnline();
 
-  await refreshGeminiConfig();
+  const location =
+    !offline && needsLocation(userMessage)
+      ? await getUserLocation().catch(() => null)
+      : null;
 
-  // 1. Web-first — weather, news, and web search (no Gemini API call).
-  let content = await respondFromWeb(userMessage, location);
+  if (!offline) {
+    await refreshLlmConfig();
+  }
 
-  // 2. Conversational messages — try Gemini when available, otherwise local Spark replies.
-  if (!content && isConversationalMessage(userMessage)) {
-    if (isModelReady()) {
+  let content: string | null = null;
+
+  if (offline) {
+    content = respondOffline(userMessage);
+  } else {
+    // 1. Web-first — weather, news, and web search (no LLM API call).
+    content = await respondFromWeb(userMessage, location);
+
+    // 2. Conversational messages — try LLM when available, otherwise local Spark replies.
+    if (!content && isConversationalMessage(userMessage)) {
+      if (isModelReady()) {
+        try {
+          content = await respondWithLlm(userMessage, history, location);
+        } catch (err) {
+          content = isNetworkError(err) ? respondOffline(userMessage) : respondLocally(userMessage);
+        }
+      } else {
+        content = respondLocally(userMessage);
+      }
+    }
+
+    // 3. Factual questions — try web search if not already answered.
+    if (!content && shouldUseWebLookup(userMessage)) {
+      content = await respondFromWeb(userMessage, location);
+    }
+
+    // 4. Optional LLM polish for open-ended chat when under rate limits.
+    if (!content && isModelReady() && !shouldUseWebLookup(userMessage)) {
       try {
-        content = await respondWithGemini(userMessage, history, location);
-      } catch {
-        content = await respondLocally(userMessage);
-      }
-    } else {
-      content = await respondLocally(userMessage);
-    }
-  }
-
-  // 3. Factual questions — try web search if not already answered.
-  if (!content && shouldUseWebLookup(userMessage)) {
-    content = await respondFromWeb(userMessage, location);
-  }
-
-  // 4. Optional Gemini polish for open-ended chat when under rate limits.
-  if (!content && isModelReady() && !shouldUseWebLookup(userMessage)) {
-    try {
-      content = await respondWithGemini(userMessage, history, location);
-    } catch (err) {
-      if (!isRateLimitError(err)) {
-        content = await respondLocally(userMessage);
+        content = await respondWithLlm(userMessage, history, location);
+      } catch (err) {
+        if (isNetworkError(err)) {
+          content = respondOffline(userMessage);
+        } else if (!isRateLimitError(err)) {
+          content = respondLocally(userMessage);
+        }
       }
     }
-  }
 
-  // 5. Rate-limited or no API key — web search last attempt, then local fallback.
-  if (!content && shouldUseWebLookup(userMessage)) {
-    content = await respondFromWeb(userMessage, location);
-  }
+    // 5. Rate-limited or no API key — web search last attempt, then local fallback.
+    if (!content && shouldUseWebLookup(userMessage)) {
+      content = await respondFromWeb(userMessage, location);
+    }
 
-  if (!content) {
-    content = await respondLocally(userMessage);
+    if (!content) {
+      content = respondLocally(userMessage);
+    }
   }
 
   return {
@@ -203,6 +192,7 @@ export const WELCOME_MESSAGE: ChatMessage = {
   role: 'assistant',
   content:
     "Hey — I'm Spark, your AI companion for warmth and encouragement. " +
-    "Talk or type — ask about the weather, catch up on headlines, or look up anything on the web.\n\nYou've got this.",
+    "Talk or type — ask about the weather, catch up on headlines, or look up anything on the web. " +
+    "Even offline, I've got motivational quotes ready for you.\n\nYou've got this.",
   timestamp: Date.now(),
 };

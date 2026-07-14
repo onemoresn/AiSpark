@@ -13,11 +13,16 @@ import {
 } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
 import {
-  GEMINI_MODEL_IDS,
-  GEMINI_MODELS,
-  DEFAULT_GEMINI_MODEL,
-  type GeminiModelId,
-} from '../lib/llm/geminiConfig';
+  DEFAULT_LLM_PROVIDER,
+  DEFAULT_MODELS,
+  getProviderModelIds,
+  getProviderName,
+  LLM_PROVIDER_IDS,
+  LLM_PROVIDERS,
+  PROVIDER_MODELS,
+  type LlmProviderId,
+} from '../lib/llm/providersConfig';
+import { validateProviderApiKey, type ApiKeyValidation } from '../lib/llm/llmService';
 import {
   formatVoiceLabel,
   VOICE_STYLES,
@@ -26,7 +31,12 @@ import {
   type VoicePreference,
 } from '../lib/voice/voiceConfig';
 import type { AppSettings } from '../lib/storage';
-import { validateGeminiApiKey, type ApiKeyValidation } from '../lib/llm/geminiApi';
+import { resolveTtsEngineSync, describeTtsSetup } from '../lib/voice/ttsRouter';
+import {
+  getAvailableVoices,
+  voicePreferenceForEngine,
+  type TtsEngine,
+} from '../lib/voice/voiceConfig';
 import { colors, radii, spacing } from '../constants/theme';
 
 
@@ -51,8 +61,15 @@ export function SettingsModal({
   onPreviewVoice,
   isPreviewing,
 }: Props) {
-  const [draftApiKey, setDraftApiKey] = useState('');
-  const [draftModelId, setDraftModelId] = useState<GeminiModelId>(DEFAULT_GEMINI_MODEL);
+  const [draftProviderId, setDraftProviderId] = useState<LlmProviderId>(DEFAULT_LLM_PROVIDER);
+  const [draftApiKeys, setDraftApiKeys] = useState<Record<LlmProviderId, string>>({
+    gemini: '',
+    openai: '',
+    anthropic: '',
+  });
+  const [draftModelIds, setDraftModelIds] = useState<Record<LlmProviderId, string>>({
+    ...DEFAULT_MODELS,
+  });
   const [draftVoiceEnabled, setDraftVoiceEnabled] = useState(true);
   const [draftVoiceId, setDraftVoiceId] = useState(DEFAULT_VOICE_PREFERENCE.voiceId);
   const [draftStyleId, setDraftStyleId] = useState(DEFAULT_VOICE_PREFERENCE.styleId);
@@ -64,8 +81,9 @@ export function SettingsModal({
 
   useEffect(() => {
     if (!visible) return;
-    setDraftApiKey(savedSettings.apiKey);
-    setDraftModelId(savedSettings.modelId);
+    setDraftProviderId(savedSettings.providerId);
+    setDraftApiKeys(savedSettings.apiKeys);
+    setDraftModelIds(savedSettings.modelIds);
     setDraftVoiceEnabled(savedSettings.voiceEnabled);
     setDraftVoiceId(savedSettings.voicePreference.voiceId);
     setDraftStyleId(savedSettings.voicePreference.styleId);
@@ -74,11 +92,38 @@ export function SettingsModal({
     lastTestedKeyRef.current = savedSettings.apiKey.trim();
   }, [visible, savedSettings]);
 
+  const draftApiKey = draftApiKeys[draftProviderId] ?? '';
+  const draftModelId = draftModelIds[draftProviderId] ?? DEFAULT_MODELS[draftProviderId];
+  const activeProvider = LLM_PROVIDERS[draftProviderId];
+  const modelCatalog = PROVIDER_MODELS[draftProviderId] as Record<
+    string,
+    { name: string; description: string }
+  >;
+  const ttsEngine: TtsEngine =
+    resolveTtsEngineSync(draftProviderId, draftApiKeys) ?? 'openai';
+  const ttsVoices = getAvailableVoices(ttsEngine);
+  const ttsHint = describeTtsSetup(draftProviderId, draftApiKeys);
+
+  const setDraftApiKey = (value: string) => {
+    setDraftApiKeys((prev) => ({ ...prev, [draftProviderId]: value }));
+  };
+
+  const setDraftModelId = (value: string) => {
+    setDraftModelIds((prev) => ({ ...prev, [draftProviderId]: value }));
+  };
+
+  const handleProviderChange = (providerId: LlmProviderId) => {
+    setDraftProviderId(providerId);
+    setApiKeyStatus(null);
+    lastTestedKeyRef.current = '';
+  };
+
   useEffect(() => {
     if (!visible) return;
 
     const trimmed = draftApiKey.trim();
-    if (trimmed.length < 20) {
+    const minLength = activeProvider.minKeyLength;
+    if (trimmed.length < minLength) {
       setApiKeyStatus(
         trimmed.length === 0
           ? null
@@ -86,7 +131,7 @@ export function SettingsModal({
               chatOk: false,
               voiceOk: false,
               status: 'empty',
-              message: 'Keep typing — Gemini keys are longer than this.',
+              message: `Keep typing — ${activeProvider.name} keys are longer than this.`,
             }
       );
       setTestingApiKey(false);
@@ -106,7 +151,7 @@ export function SettingsModal({
     });
 
     const timer = setTimeout(() => {
-      validateGeminiApiKey(trimmed, draftModelId)
+      validateProviderApiKey(draftProviderId, trimmed, draftModelId, draftApiKeys)
         .then((result) => {
           lastTestedKeyRef.current = trimmed;
           setApiKeyStatus(result);
@@ -123,7 +168,7 @@ export function SettingsModal({
     }, 1500);
 
     return () => clearTimeout(timer);
-  }, [draftApiKey, draftModelId, visible]);
+  }, [draftApiKey, draftModelId, draftProviderId, draftApiKeys, visible]);
 
   const activeStyle = VOICE_STYLES.find((s) => s.id === draftStyleId);
   const pickerValue = draftVoiceId;
@@ -138,8 +183,17 @@ export function SettingsModal({
     setSaveMessage(null);
     try {
       await onSaveConfiguration({
+        providerId: draftProviderId,
         apiKey: draftApiKey.trim(),
         modelId: draftModelId,
+        apiKeys: {
+          ...draftApiKeys,
+          [draftProviderId]: draftApiKey.trim(),
+        },
+        modelIds: {
+          ...draftModelIds,
+          [draftProviderId]: draftModelId,
+        },
         voiceEnabled: draftVoiceEnabled,
         voicePreference: draftVoicePreference,
       });
@@ -158,15 +212,37 @@ export function SettingsModal({
           <ScrollView showsVerticalScrollIndicator={false}>
             <Text style={styles.title}>Settings</Text>
 
-            <Text style={styles.sectionTitle}>Gemini API key</Text>
-            <Text style={styles.hint}>
-              Get a free key at Google AI Studio. Stored locally on your device.
+            <Text style={styles.sectionTitle}>AI provider</Text>
+            <Text style={styles.hint}>Choose who powers Spark's conversational replies.</Text>
+            <View style={styles.providerGrid}>
+              {LLM_PROVIDER_IDS.map((id) => {
+                const provider = LLM_PROVIDERS[id];
+                const selected = draftProviderId === id;
+                return (
+                  <TouchableOpacity
+                    key={id}
+                    style={[styles.providerChip, selected && styles.providerChipSelected]}
+                    onPress={() => handleProviderChange(id)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={[styles.providerName, selected && styles.providerNameSelected]}>
+                      {provider.name}
+                    </Text>
+                    <Text style={styles.providerBrand}>{provider.brand}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            <Text style={[styles.sectionTitle, styles.modelSection]}>
+              {activeProvider.name} API key
             </Text>
+            <Text style={styles.hint}>{activeProvider.keyHint}</Text>
             <TextInput
               style={styles.apiInput}
               value={draftApiKey}
               onChangeText={setDraftApiKey}
-              placeholder="Paste your Gemini API key"
+              placeholder={activeProvider.keyPlaceholder}
               placeholderTextColor={colors.textMuted}
               autoCapitalize="none"
               autoCorrect={false}
@@ -203,11 +279,37 @@ export function SettingsModal({
               </View>
             )}
 
-            <Text style={[styles.sectionTitle, styles.modelSection]}>AI model</Text>
-            <Text style={styles.hint}>Powered by Google Gemini — fast cloud responses.</Text>
+            {draftProviderId === 'anthropic' && (
+              <>
+                <Text style={[styles.sectionTitle, styles.modelSection]}>
+                  ChatGPT API key for voice
+                </Text>
+                <Text style={styles.hint}>
+                  Optional — powers natural voice via OpenAI TTS while Claude handles chat.
+                  Stored separately on your device.
+                </Text>
+                <TextInput
+                  style={styles.apiInput}
+                  value={draftApiKeys.openai}
+                  onChangeText={(value) =>
+                    setDraftApiKeys((prev) => ({ ...prev, openai: value }))
+                  }
+                  placeholder="Paste OpenAI API key for voice"
+                  placeholderTextColor={colors.textMuted}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  secureTextEntry
+                />
+              </>
+            )}
 
-            {GEMINI_MODEL_IDS.map((id) => {
-              const model = GEMINI_MODELS[id];
+            <Text style={[styles.sectionTitle, styles.modelSection]}>AI model</Text>
+            <Text style={styles.hint}>
+              {activeProvider.name} model for chat — weather and web answers stay free.
+            </Text>
+
+            {getProviderModelIds(draftProviderId).map((id) => {
+              const model = modelCatalog[id];
               const selected = draftModelId === id;
               return (
                 <TouchableOpacity
@@ -246,7 +348,9 @@ export function SettingsModal({
                     style={[styles.styleChip, selected && styles.styleChipSelected]}
                     onPress={() => {
                       setDraftStyleId(style.id);
-                      setDraftVoiceId(style.voiceId);
+                      setDraftVoiceId(
+                        ttsEngine === 'gemini' ? style.geminiVoiceId : style.openaiVoiceId
+                      );
                     }}
                     activeOpacity={0.7}
                   >
@@ -274,9 +378,7 @@ export function SettingsModal({
                 )}
               </TouchableOpacity>
             </View>
-            <Text style={styles.hint}>
-              Natural Gemini voices — each voice sounds distinct. Requires a working API key.
-            </Text>
+            <Text style={styles.hint}>{ttsHint}</Text>
 
             <View style={styles.pickerContainer}>
               <Picker
@@ -286,7 +388,7 @@ export function SettingsModal({
                 dropdownIconColor={colors.neonPurple}
                 itemStyle={Platform.OS === 'ios' ? styles.pickerItemIOS : undefined}
               >
-                {availableVoices.map((voice) => (
+                {ttsVoices.map((voice) => (
                   <Picker.Item
                     key={voice.identifier}
                     label={formatVoiceLabel(voice)}
@@ -297,7 +399,7 @@ export function SettingsModal({
               </Picker>
             </View>
 
-            {availableVoices.length === 0 && (
+            {ttsVoices.length === 0 && (
               <Text style={styles.emptyVoices}>
                 Voice options could not be loaded. Spark will use the default voice.
               </Text>
@@ -375,6 +477,38 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: colors.text,
     marginBottom: spacing.xs,
+  },
+  providerGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+    marginBottom: spacing.lg,
+  },
+  providerChip: {
+    flex: 1,
+    minWidth: '30%',
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radii.sm,
+    padding: spacing.sm + 2,
+    backgroundColor: colors.surface,
+  },
+  providerChipSelected: {
+    borderColor: colors.neonPurple,
+    backgroundColor: colors.neonPurpleDim,
+  },
+  providerName: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  providerNameSelected: {
+    color: colors.neonPurpleBright,
+  },
+  providerBrand: {
+    fontSize: 11,
+    color: colors.textMuted,
+    marginTop: 2,
   },
   modelSection: {
     marginTop: spacing.lg,
