@@ -36,7 +36,7 @@ function trimMessages(messages: ChatMessage[]): ChatMessage[] {
 }
 
 export function ChatScreen() {
-  const { hasApiKey, modelName, providerName, saveConfiguration } = useGemini();
+  const { hasApiKey, modelName, saveConfiguration } = useGemini();
   const { isOnline } = useNetworkStatus();
   const {
     supported: voiceSupported,
@@ -182,8 +182,8 @@ export function ChatScreen() {
                     : !isOnline
                       ? 'Offline · cached quotes & local replies'
                       : hasApiKey
-                        ? `${modelName} · Web + ${providerName}`
-                        : 'Web answers · Add API key for chat AI'}
+                        ? `${modelName} · Web + Gemini`
+                        : 'Web answers · Add key for voice & chat AI'}
               </Text>
             </View>
           </View>

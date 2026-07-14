@@ -7,16 +7,14 @@ import React, {
   useState,
 } from 'react';
 import {
-  refreshLlmConfig,
-  isModelReady,
-} from '../lib/llm/llmService';
+  DEFAULT_GEMINI_MODEL,
+  GEMINI_MODELS,
+  type GeminiModelId,
+} from '../lib/llm/geminiConfig';
 import {
-  DEFAULT_LLM_PROVIDER,
-  DEFAULT_MODELS,
-  getModelName,
-  getProviderName,
-  type LlmProviderId,
-} from '../lib/llm/providersConfig';
+  refreshGeminiConfig,
+  isModelReady,
+} from '../lib/llm/geminiService';
 import {
   getAppSettings,
   saveAppSettings,
@@ -24,9 +22,7 @@ import {
 } from '../lib/storage';
 
 interface GeminiContextValue {
-  providerId: LlmProviderId;
-  providerName: string;
-  modelId: string;
+  modelId: GeminiModelId;
   modelName: string;
   hasApiKey: boolean;
   isReady: boolean;
@@ -37,15 +33,13 @@ interface GeminiContextValue {
 const GeminiContext = createContext<GeminiContextValue | null>(null);
 
 export function GeminiProvider({ children }: { children: React.ReactNode }) {
-  const [providerId, setProviderId] = useState<LlmProviderId>(DEFAULT_LLM_PROVIDER);
-  const [modelId, setModelId] = useState('');
+  const [modelId, setModelId] = useState<GeminiModelId>(DEFAULT_GEMINI_MODEL);
   const [hasApiKey, setHasApiKey] = useState(false);
 
   const reloadSettings = useCallback(async () => {
     const settings = await getAppSettings();
-    setProviderId(settings.providerId);
     setModelId(settings.modelId);
-    await refreshLlmConfig();
+    await refreshGeminiConfig();
     setHasApiKey(isModelReady());
   }, []);
 
@@ -63,16 +57,14 @@ export function GeminiProvider({ children }: { children: React.ReactNode }) {
 
   const value = useMemo<GeminiContextValue>(
     () => ({
-      providerId,
-      providerName: getProviderName(providerId),
       modelId,
-      modelName: getModelName(providerId, modelId || DEFAULT_MODELS[providerId]),
+      modelName: GEMINI_MODELS[modelId].name,
       hasApiKey,
       isReady: hasApiKey,
       reloadSettings,
       saveConfiguration,
     }),
-    [providerId, modelId, hasApiKey, reloadSettings, saveConfiguration]
+    [modelId, hasApiKey, reloadSettings, saveConfiguration]
   );
 
   return <GeminiContext.Provider value={value}>{children}</GeminiContext.Provider>;

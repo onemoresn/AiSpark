@@ -6,7 +6,6 @@ import {
 } from './geminiConfig';
 import { geminiFetch } from './geminiApi';
 import { getGeminiApiKey, getSelectedGeminiModel } from '../storage';
-import { resolveModelId } from './providersConfig';
 
 type ChatRole = 'system' | 'user' | 'assistant';
 
@@ -21,7 +20,7 @@ let cachedModelId: GeminiModelId = DEFAULT_GEMINI_MODEL;
 export async function refreshGeminiConfig(): Promise<void> {
   cachedApiKey = await getGeminiApiKey();
   const saved = await getSelectedGeminiModel();
-  cachedModelId = (saved ? resolveModelId('gemini', saved) : DEFAULT_GEMINI_MODEL) as GeminiModelId;
+  cachedModelId = saved ?? DEFAULT_GEMINI_MODEL;
 }
 
 export function isModelReady(): boolean {

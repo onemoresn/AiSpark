@@ -1,5 +1,6 @@
 import { CHAT_MODEL_FALLBACKS, type GeminiModelId } from './geminiConfig';
-import { llmFetch } from './llmFetch';
+
+const REQUEST_TIMEOUT_MS = 25_000;
 
 export type ApiKeyValidation = {
   chatOk: boolean;
@@ -61,7 +62,31 @@ function extractVisibleText(data: {
 }
 
 export async function geminiFetch(url: string, init: RequestInit): Promise<Response> {
-  return llmFetch(url, init);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(url, { ...init, signal: controller.signal });
+    clearTimeout(timeout);
+    return response;
+  } catch (err) {
+    clearTimeout(timeout);
+    if (err instanceof Error && err.name === 'AbortError') {
+      throw new Error('Request timed out');
+    }
+
+    const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(url)}`;
+    const proxyController = new AbortController();
+    const proxyTimeout = setTimeout(() => proxyController.abort(), REQUEST_TIMEOUT_MS);
+    try {
+      const response = await fetch(proxyUrl, { ...init, signal: proxyController.signal });
+      clearTimeout(proxyTimeout);
+      return response;
+    } catch (proxyErr) {
+      clearTimeout(proxyTimeout);
+      throw proxyErr;
+    }
+  }
 }
 
 async function readGeminiResponse(response: Response, label: string): Promise<Response> {

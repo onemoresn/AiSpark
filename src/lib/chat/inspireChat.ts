@@ -1,7 +1,7 @@
 import { CLOSING_LINES } from '../inspire/systemPrompt';
 import type { ChatMessage, LocationCoords } from '../inspire/types';
 import { getUserLocation } from '../location';
-import { generateCompletion, isModelReady, refreshLlmConfig } from '../llm/llmService';
+import { generateCompletion, isModelReady, refreshGeminiConfig } from '../llm/geminiService';
 import { respondLocally, respondOffline } from '../offline/localResponses';
 import { isBrowserOnline, isNetworkError } from '../offline/networkStatus';
 import { executeTool } from '../tools';
@@ -118,7 +118,7 @@ export async function generateInspireResponse(
       : null;
 
   if (!offline) {
-    await refreshLlmConfig();
+    await refreshGeminiConfig();
   }
 
   let content: string | null = null;
