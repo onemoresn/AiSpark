@@ -1,11 +1,16 @@
-import { SPARK_SYSTEM_PROMPT, CLOSING_LINES } from '../inspire/systemPrompt';
+import { CLOSING_LINES } from '../inspire/systemPrompt';
 import type { ChatMessage, LocationCoords } from '../inspire/types';
 import { getUserLocation } from '../location';
-import { executeTool } from '../tools';
-import { detectWeatherIntent } from '../tools/weather';
-import { detectNewsIntent } from '../tools/news';
-import { detectSearchIntent } from '../tools/webSearch';
 import { generateCompletion, isModelReady, refreshGeminiConfig } from '../llm/geminiService';
+import { executeTool } from '../tools';
+import { detectNewsIntent } from '../tools/news';
+import { detectWeatherIntent } from '../tools/weather';
+import {
+  buildWebSearchQuery,
+  isConversationalMessage,
+  shouldUseWebLookup,
+} from '../tools/webIntent';
+import { detectSearchIntent } from '../tools/webSearch';
 
 function randomClosing(): string {
   return CLOSING_LINES[Math.floor(Math.random() * CLOSING_LINES.length)];
@@ -15,18 +20,16 @@ function createId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
-function extractSearchQuery(message: string): string {
-  return message
-    .replace(/\b(what is|who is|when did|how does|tell me about|explain|define|search for)\b/gi, '')
-    .replace(/[?]/g, '')
-    .trim();
-}
-
 function needsLocation(message: string): boolean {
   return detectWeatherIntent(message);
 }
 
-async function gatherToolContext(
+function isRateLimitError(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : String(err);
+  return /429|too many requests|resource exhausted|rate limit/i.test(message);
+}
+
+async function gatherWebContext(
   userMessage: string,
   location: LocationCoords | null
 ): Promise<string | null> {
@@ -37,12 +40,28 @@ async function gatherToolContext(
     if (detectNewsIntent(userMessage)) {
       return await executeTool('get_news', {}, location);
     }
-    if (detectSearchIntent(userMessage)) {
-      const query = extractSearchQuery(userMessage) || userMessage;
+
+    const wantsSearch =
+      detectSearchIntent(userMessage) ||
+      (shouldUseWebLookup(userMessage) && !isConversationalMessage(userMessage));
+
+    if (wantsSearch) {
+      const query = buildWebSearchQuery(userMessage);
       return await executeTool('web_search', { query }, location);
     }
   } catch {
     return null;
+  }
+  return null;
+}
+
+async function respondFromWeb(
+  userMessage: string,
+  location: LocationCoords | null
+): Promise<string | null> {
+  const webContext = await gatherWebContext(userMessage, location);
+  if (webContext) {
+    return `${webContext}\n\n${randomClosing()}`;
   }
   return null;
 }
@@ -52,20 +71,6 @@ async function respondWithGemini(
   history: ChatMessage[],
   location: LocationCoords | null
 ): Promise<string> {
-  const wantsWeather = detectWeatherIntent(userMessage);
-  const wantsNews = detectNewsIntent(userMessage);
-  const toolContext = await gatherToolContext(userMessage, location);
-
-  // Weather and news tools already return polished copy — skip the extra Gemini round-trip.
-  if (toolContext && (wantsWeather || wantsNews)) {
-    return `${toolContext}\n\n${randomClosing()}`;
-  }
-
-  // Tool query but fetch failed — use local fallbacks instead of a truncated Gemini guess.
-  if ((wantsWeather || wantsNews) && !toolContext) {
-    return await respondLocally(userMessage, location);
-  }
-
   const recentHistory = history
     .filter((m) => m.id !== 'welcome')
     .slice(-6)
@@ -75,39 +80,28 @@ async function respondWithGemini(
     }));
 
   const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
-    { role: 'system', content: SPARK_SYSTEM_PROMPT },
+    {
+      role: 'system',
+      content:
+        'You are Spark, a warm motivational assistant. Keep replies to 2-4 friendly sentences.',
+    },
     ...recentHistory,
   ];
 
-  if (toolContext) {
-    messages.push({
-      role: 'system',
-      content: `Use this real-time information in your response:\n\n${toolContext}`,
-    });
-  }
-
   if (location?.city) {
-    messages[0].content += `\n\nUser location: ${location.city}.`;
+    messages[0].content += ` The user is near ${location.city}.`;
   }
 
   messages.push({ role: 'user', content: userMessage });
 
   const response = await generateCompletion(messages);
   if (!response) {
-    return `I'm right here with you. Take a breath and keep moving forward.\n\n${randomClosing()}`;
+    throw new Error('Gemini returned an empty response');
   }
   return response;
 }
 
-async function respondLocally(
-  userMessage: string,
-  location: LocationCoords | null
-): Promise<string> {
-  const toolContext = await gatherToolContext(userMessage, location);
-  if (toolContext) {
-    return `${toolContext}\n\n${randomClosing()}`;
-  }
-
+async function respondLocally(userMessage: string): Promise<string> {
   const greetings = /\b(hi|hello|hey|good morning|good afternoon|good evening)\b/i;
   if (greetings.test(userMessage)) {
     return (
@@ -144,19 +138,47 @@ export async function generateInspireResponse(
     ? await getUserLocation().catch(() => null)
     : null;
 
-  if (!isModelReady()) {
-    await refreshGeminiConfig();
+  await refreshGeminiConfig();
+
+  // 1. Web-first — weather, news, and web search (no Gemini API call).
+  let content = await respondFromWeb(userMessage, location);
+
+  // 2. Conversational messages — try Gemini when available, otherwise local Spark replies.
+  if (!content && isConversationalMessage(userMessage)) {
+    if (isModelReady()) {
+      try {
+        content = await respondWithGemini(userMessage, history, location);
+      } catch {
+        content = await respondLocally(userMessage);
+      }
+    } else {
+      content = await respondLocally(userMessage);
+    }
   }
 
-  let content: string;
-  if (isModelReady()) {
+  // 3. Factual questions — try web search if not already answered.
+  if (!content && shouldUseWebLookup(userMessage)) {
+    content = await respondFromWeb(userMessage, location);
+  }
+
+  // 4. Optional Gemini polish for open-ended chat when under rate limits.
+  if (!content && isModelReady() && !shouldUseWebLookup(userMessage)) {
     try {
       content = await respondWithGemini(userMessage, history, location);
-    } catch {
-      content = await respondLocally(userMessage, location);
+    } catch (err) {
+      if (!isRateLimitError(err)) {
+        content = await respondLocally(userMessage);
+      }
     }
-  } else {
-    content = await respondLocally(userMessage, location);
+  }
+
+  // 5. Rate-limited or no API key — web search last attempt, then local fallback.
+  if (!content && shouldUseWebLookup(userMessage)) {
+    content = await respondFromWeb(userMessage, location);
+  }
+
+  if (!content) {
+    content = await respondLocally(userMessage);
   }
 
   return {
@@ -181,6 +203,6 @@ export const WELCOME_MESSAGE: ChatMessage = {
   role: 'assistant',
   content:
     "Hey — I'm Spark, your AI companion for warmth and encouragement. " +
-    "Talk or type — ask about the weather, catch up on headlines, or just tell me how you're feeling.\n\nYou've got this.",
+    "Talk or type — ask about the weather, catch up on headlines, or look up anything on the web.\n\nYou've got this.",
   timestamp: Date.now(),
 };

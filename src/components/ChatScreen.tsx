@@ -178,8 +178,8 @@ export function ChatScreen() {
                   : isListening
                     ? 'Listening...'
                     : hasApiKey
-                      ? `${modelName} · Gemini`
-                      : 'Add API key in Settings'}
+                      ? `${modelName} · Web + Gemini`
+                      : 'Web answers · Add key for voice & chat AI'}
               </Text>
             </View>
           </View>

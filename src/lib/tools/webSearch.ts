@@ -12,13 +12,33 @@ interface DuckDuckGoResponse {
   RelatedTopics?: DuckDuckGoTopic[];
 }
 
-export async function webSearch(query: string): Promise<SearchResult[]> {
-  const url = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1`;
+interface WikipediaSummary {
+  title?: string;
+  extract?: string;
+  content_urls?: { desktop?: { page?: string } };
+}
 
-  const response = await fetch(url);
-  if (!response.ok) throw new Error('Search unavailable');
+async function fetchJson<T>(url: string): Promise<T> {
+  try {
+    const response = await fetch(url);
+    if (response.ok) {
+      return (await response.json()) as T;
+    }
+  } catch {
+    // Fall through to proxy.
+  }
 
-  const data: DuckDuckGoResponse = await response.json();
+  const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
+  const proxyResponse = await fetch(proxyUrl);
+  if (!proxyResponse.ok) {
+    throw new Error('Search unavailable');
+  }
+  return (await proxyResponse.json()) as T;
+}
+
+async function searchDuckDuckGo(query: string): Promise<SearchResult[]> {
+  const url = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`;
+  const data = await fetchJson<DuckDuckGoResponse>(url);
   const results: SearchResult[] = [];
 
   if (data.AbstractText) {
@@ -29,8 +49,7 @@ export async function webSearch(query: string): Promise<SearchResult[]> {
     });
   }
 
-  const topics = data.RelatedTopics ?? [];
-  for (const topic of topics) {
+  for (const topic of data.RelatedTopics ?? []) {
     if (topic.Text && results.length < 4) {
       results.push({
         title: topic.Text.split(' - ')[0] ?? topic.Text,
@@ -40,10 +59,46 @@ export async function webSearch(query: string): Promise<SearchResult[]> {
     }
   }
 
+  return results;
+}
+
+async function searchWikipedia(query: string): Promise<SearchResult | null> {
+  const searchUrl =
+    `https://en.wikipedia.org/w/api.php?action=opensearch&search=${encodeURIComponent(query)}` +
+    '&limit=1&namespace=0&format=json&origin=*';
+
+  const searchData = await fetchJson<[string, string[], string[], string[]]>(searchUrl);
+  const title = searchData[1]?.[0];
+  if (!title) return null;
+
+  const summaryUrl = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(
+    title.replace(/ /g, '_')
+  )}`;
+
+  const summary = await fetchJson<WikipediaSummary>(summaryUrl);
+  if (!summary.extract) return null;
+
+  return {
+    title: summary.title ?? title,
+    snippet: summary.extract,
+    url: summary.content_urls?.desktop?.page,
+  };
+}
+
+export async function webSearch(query: string): Promise<SearchResult[]> {
+  const results = await searchDuckDuckGo(query);
+
+  if (results.length === 0) {
+    const wiki = await searchWikipedia(query);
+    if (wiki) {
+      results.push(wiki);
+    }
+  }
+
   if (results.length === 0) {
     results.push({
       title: query,
-      snippet: `I looked into "${query}" — while details were limited, your curiosity is a sign you're growing and exploring.`,
+      snippet: `I searched the web for "${query}" but couldn't find a clear summary right now. Your curiosity still matters — try rephrasing or ask about today's weather or headlines.`,
     });
   }
 
@@ -60,11 +115,12 @@ export function formatSearchResponse(query: string, results: SearchResult[]): st
   return (
     `Here's what I found about "${query}":\n\n` +
     (top?.snippet ? `${top.snippet}\n\n` : '') +
-    summary +
-    '\n\nEvery question you ask is a step toward clarity — keep that curiosity alive.'
+    summary
   );
 }
 
 export function detectSearchIntent(message: string): boolean {
-  return /\b(what is|who is|when did|how does|tell me about|explain|define|search for)\b/i.test(message);
+  return /\b(what is|who is|when did|how does|tell me about|explain|define|search for|look up|find out)\b/i.test(
+    message
+  );
 }
