@@ -2,13 +2,6 @@ import { CHAT_MODEL_FALLBACKS, type GeminiModelId } from './geminiConfig';
 
 const REQUEST_TIMEOUT_MS = 25_000;
 
-function chatModelsToTry(preferred?: GeminiModelId): GeminiModelId[] {
-  const ordered = preferred
-    ? [preferred, ...CHAT_MODEL_FALLBACKS.filter((id) => id !== preferred)]
-    : [...CHAT_MODEL_FALLBACKS];
-  return [...new Set(ordered)];
-}
-
 export type ApiKeyValidation = {
   chatOk: boolean;
   voiceOk: boolean;
@@ -18,16 +11,54 @@ export type ApiKeyValidation = {
 
 export function parseGeminiError(err: unknown, fallback: string): string {
   if (err instanceof Error) {
+    const raw = err.message;
+    if (/429|too many requests|resource exhausted|rate limit/i.test(raw)) {
+      return 'Rate limit exceeded — wait a minute, then try again. (Free tier has request limits per minute.)';
+    }
     try {
-      const parsed = JSON.parse(err.message) as {
-        error?: { message?: string };
+      const parsed = JSON.parse(raw) as {
+        error?: { message?: string; code?: number; status?: string };
       };
-      if (parsed.error?.message) return parsed.error.message;
+      const msg = parsed.error?.message;
+      if (msg) {
+        if (/429|too many requests|resource exhausted|rate limit/i.test(msg)) {
+          return 'Rate limit exceeded — wait a minute, then try again. (Free tier has request limits per minute.)';
+        }
+        return msg;
+      }
     } catch {
-      if (err.message) return err.message;
+      if (raw) return raw;
     }
   }
   return fallback;
+}
+
+function extractVisibleText(data: {
+  candidates?: Array<{
+    content?: { parts?: Array<{ text?: string; thought?: boolean }> };
+    finishReason?: string;
+  }>;
+  promptFeedback?: { blockReason?: string };
+}): string {
+  const parts = data.candidates?.[0]?.content?.parts ?? [];
+  const text = parts
+    .filter((p) => p.text && p.thought !== true)
+    .map((p) => p.text ?? '')
+    .join('')
+    .trim();
+
+  if (text) return text;
+
+  const finishReason = data.candidates?.[0]?.finishReason;
+  const blockReason = data.promptFeedback?.blockReason;
+  if (blockReason) {
+    throw new Error(`Request blocked: ${blockReason}`);
+  }
+  if (finishReason && finishReason !== 'STOP') {
+    throw new Error(`Model stopped early (${finishReason})`);
+  }
+
+  return '';
 }
 
 export async function geminiFetch(url: string, init: RequestInit): Promise<Response> {
@@ -70,37 +101,32 @@ export async function testGeminiChat(
   apiKey: string,
   preferredModel?: GeminiModelId
 ): Promise<void> {
-  let lastError: Error | null = null;
+  const modelId = preferredModel ?? CHAT_MODEL_FALLBACKS[0];
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${encodeURIComponent(apiKey)}`;
 
-  for (const modelId of chatModelsToTry(preferredModel)) {
-    try {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${encodeURIComponent(apiKey)}`;
-
-      const response = await geminiFetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: 'Reply with exactly: OK' }] }],
-          generationConfig: { maxOutputTokens: 8, temperature: 0 },
-        }),
-      });
-
-      await readGeminiResponse(response, 'Chat API');
-      const data = (await response.json()) as {
-        candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
-      };
-
-      const text = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-      if (!text) {
-        throw new Error('Chat API returned an empty response');
-      }
-      return;
-    } catch (err) {
-      lastError = err instanceof Error ? err : new Error(String(err));
-    }
+  const generationConfig: Record<string, unknown> = {
+    temperature: 0,
+  };
+  if (modelId.includes('gemini-3')) {
+    generationConfig.thinkingConfig = { thinkingBudget: 0 };
   }
 
-  throw lastError ?? new Error('Chat API check failed');
+  const response = await geminiFetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      contents: [{ parts: [{ text: 'Reply with exactly: OK' }] }],
+      generationConfig,
+    }),
+  });
+
+  await readGeminiResponse(response, 'Chat API');
+  const data = (await response.json()) as Parameters<typeof extractVisibleText>[0];
+
+  const text = extractVisibleText(data);
+  if (!text) {
+    throw new Error('Chat API returned an empty response — you may be rate-limited. Wait a minute and retry.');
+  }
 }
 
 export async function testGeminiVoice(apiKey: string, voiceName = 'Sulafat'): Promise<void> {
@@ -141,11 +167,13 @@ export async function validateGeminiApiKey(
     chatError = parseGeminiError(err, 'Chat API check failed');
   }
 
-  try {
-    await testGeminiVoice(trimmed);
-    voiceOk = true;
-  } catch (err) {
-    voiceError = parseGeminiError(err, 'Natural voice check failed');
+  if (chatOk) {
+    try {
+      await testGeminiVoice(trimmed);
+      voiceOk = true;
+    } catch (err) {
+      voiceError = parseGeminiError(err, 'Natural voice check failed');
+    }
   }
 
   if (chatOk && voiceOk) {

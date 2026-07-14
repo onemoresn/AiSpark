@@ -120,7 +120,7 @@ export function SettingsModal({
           });
         })
         .finally(() => setTestingApiKey(false));
-    }, 700);
+    }, 1500);
 
     return () => clearTimeout(timer);
   }, [draftApiKey, draftModelId, visible]);
